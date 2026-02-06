@@ -1,7 +1,7 @@
 """
 Fine-tune Cross-Attention + Mamba TCM Fusion Model on CFS/ABC
 
-用法:
+
 python finetune_mamba_fusion.py --dataset cfs --fusion_model ./outputs/mamba_fusion/best_model.pth
 python finetune_mamba_fusion.py --dataset abc --fusion_model ./outputs/mamba_fusion/best_model.pth
 """
@@ -30,7 +30,7 @@ sys.path.insert(0, '.')
 
 from cross_attention_mamba_fusion import EEGPPGCrossAttentionMambaFusion, MambaTCM
 
-# ==================== 数据集配置 ====================
+
 DATASET_CONFIG = {
     'cfs': {
         'ppg_data': '../../data/cfs_ppg_with_labels.h5',
@@ -48,7 +48,6 @@ DATASET_CONFIG = {
 
 
 class CrossDatasetFusion(Dataset):
-    """跨数据集融合Dataset"""
 
     def __init__(self,
                  eeg_folder: str,
@@ -64,10 +63,10 @@ class CrossDatasetFusion(Dataset):
         self.epochs_per_window = window_minutes * 2
         self.samples_per_epoch = samples_per_epoch
 
-        # 构建EEG文件映射
+
         self.eeg_file_map = self._build_eeg_file_map(eeg_folder)
 
-        # 打开PPG文件
+
         self.ppg_h5 = h5py.File(ppg_h5_path, 'r')
         self.ppg_data = self.ppg_h5['ppg']
         self.ppg_index_h5 = h5py.File(ppg_index_path, 'r')
@@ -78,7 +77,7 @@ class CrossDatasetFusion(Dataset):
         print(f"  [{dataset_name.upper()}] Loaded {len(self.samples)} samples from {len(subject_ids)} subjects")
 
     def _build_eeg_file_map(self, eeg_folder):
-        """构建EEG文件映射"""
+
         eeg_map = {}
         if not os.path.exists(eeg_folder):
             print(f"Warning: EEG folder not found: {eeg_folder}")
@@ -89,43 +88,43 @@ class CrossDatasetFusion(Dataset):
                 continue
 
             if self.dataset_name == 'abc':
-                # ABC格式: abc-baseline-900001.npz -> 900001_baseline
+                #  abc-baseline-900001.npz -> 900001_baseline
                 if fname.startswith('abc-baseline-'):
                     subject_num = fname.replace('abc-baseline-', '').replace('.npz', '')
                     sid = f"{subject_num}_baseline"
                     eeg_map[sid] = os.path.join(eeg_folder, fname)
             else:
-                # CFS格式: 直接用文件名
+
                 sid = fname.replace('.npz', '')
                 eeg_map[sid] = os.path.join(eeg_folder, fname)
 
         return eeg_map
 
     def _build_samples(self, subject_ids):
-        """构建样本列表"""
+
         matched = 0
 
         for sid in subject_ids:
-            # 检查EEG
+
             if sid not in self.eeg_file_map:
                 continue
             eeg_path = self.eeg_file_map[sid]
 
-            # 检查PPG索引
+
             ppg_key = f'subjects/{sid}/window_indices'
             if ppg_key not in self.ppg_index_h5:
                 continue
 
             matched += 1
 
-            # 加载数据
+
             eeg_data = np.load(eeg_path)
             eeg_signals = eeg_data['x']
             eeg_labels = eeg_data['y']
             ppg_indices = self.ppg_index_h5[ppg_key][:]
             n_epochs = min(len(eeg_signals), len(ppg_indices))
 
-            # 标签映射
+
             mapped_labels = []
             for label in eeg_labels[:n_epochs]:
                 if isinstance(label, bytes):
@@ -133,13 +132,13 @@ class CrossDatasetFusion(Dataset):
                 label_int = int(label)
 
                 if self.dataset_name == 'abc':
-                    # ABC已经是4类: 0=W, 1=Light, 2=Deep, 3=REM
+
                     if label_int in [0, 1, 2, 3]:
                         mapped_labels.append(label_int)
                     else:
                         mapped_labels.append(-1)
                 else:
-                    # CFS是5类: 0=W, 1=N1, 2=N2, 3=N3, 4/5=REM
+
                     if label_int == 0:
                         mapped_labels.append(0)
                     elif label_int in [1, 2]:
@@ -152,7 +151,7 @@ class CrossDatasetFusion(Dataset):
                         mapped_labels.append(-1)
             mapped_labels = np.array(mapped_labels)
 
-            # 构建窗口样本
+
             n_windows = n_epochs // self.epochs_per_window
             for win_idx in range(n_windows):
                 start = win_idx * self.epochs_per_window
@@ -176,7 +175,7 @@ class CrossDatasetFusion(Dataset):
     def __getitem__(self, idx):
         sample = self.samples[idx]
 
-        # 加载EEG
+
         eeg_data = np.load(sample['eeg_path'])
         eeg_signals = eeg_data['x']
         start = sample['eeg_start']
@@ -184,7 +183,7 @@ class CrossDatasetFusion(Dataset):
         eeg_window = eeg_signals[start:end]
         eeg_window = (eeg_window - eeg_window.mean()) / (eeg_window.std() + 1e-8)
 
-        # 加载PPG
+
         ppg_epochs = self.ppg_data[sample['ppg_indices']]
         ppg_window = ppg_epochs.flatten()
         ppg_window = (ppg_window - ppg_window.mean()) / (ppg_window.std() + 1e-8)
@@ -203,11 +202,11 @@ class CrossDatasetFusion(Dataset):
 
 
 def load_mamba_fusion_model(fusion_model_path, eeg_model_path, ppg_model_path, device):
-    """加载预训练的Mamba融合模型"""
+
     from short_window_eeg_model import ShortWindowAttnSleep
     from ppg_crossattn_shortwindow import PPGCrossAttnShortWindow
 
-    # 加载EEG模型
+
     eeg_model = ShortWindowAttnSleep(window_minutes=3, num_classes=4)
     eeg_state = torch.load(eeg_model_path, map_location=device)
     if 'model_state_dict' in eeg_state:
@@ -216,7 +215,7 @@ def load_mamba_fusion_model(fusion_model_path, eeg_model_path, ppg_model_path, d
     eeg_model.to(device)
     eeg_model.eval()
 
-    # 加载PPG模型
+
     ppg_model = PPGCrossAttnShortWindow(window_size='3min', n_classes=4)
     ppg_state = torch.load(ppg_model_path, map_location=device)
     if 'model_state_dict' in ppg_state:
@@ -225,7 +224,7 @@ def load_mamba_fusion_model(fusion_model_path, eeg_model_path, ppg_model_path, d
     ppg_model.to(device)
     ppg_model.eval()
 
-    # 创建融合模型
+
     model = EEGPPGCrossAttentionMambaFusion(
         eeg_model=eeg_model,
         ppg_model=ppg_model,
@@ -241,7 +240,7 @@ def load_mamba_fusion_model(fusion_model_path, eeg_model_path, ppg_model_path, d
         freeze_encoders=True
     )
 
-    # 加载融合模型权重
+
     fusion_state = torch.load(fusion_model_path, map_location=device)
     if 'model_state_dict' in fusion_state:
         fusion_state = fusion_state['model_state_dict']
@@ -376,16 +375,16 @@ def main():
     print(f"Fine-tuning Mamba Fusion on {args.dataset.upper()}")
     print("=" * 70)
 
-    # 获取数据集配置
+
     config = DATASET_CONFIG[args.dataset]
 
-    # 加载模型
+
     print("\n[1/5] Loading model...")
     model = load_mamba_fusion_model(
         args.fusion_model, args.eeg_model, args.ppg_model, args.device
     )
 
-    # 解冻融合层和Mamba TCM用于fine-tuning
+
     for param in model.fusion_blocks.parameters():
         param.requires_grad = True
     for param in model.mamba_tcm.parameters():
@@ -398,10 +397,10 @@ def main():
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"  Trainable parameters: {trainable:,}")
 
-    # 加载数据
+
     print("\n[2/5] Loading data...")
 
-    # 获取所有subjects
+
     eeg_folder = config['eeg_folder']
     all_subjects = []
 
@@ -417,7 +416,7 @@ def main():
 
     print(f"  Found {len(all_subjects)} subjects")
 
-    # 划分数据集
+
     np.random.seed(42)
     np.random.shuffle(all_subjects)
     n_train = int(len(all_subjects) * args.train_ratio)
@@ -429,7 +428,7 @@ def main():
 
     print(f"  Train: {len(train_subjects)}, Val: {len(val_subjects)}, Test: {len(test_subjects)}")
 
-    # 创建数据集
+
     train_dataset = CrossDatasetFusion(
         eeg_folder, config['ppg_data'], config['ppg_index'],
         train_subjects, args.dataset
@@ -447,7 +446,7 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, pin_memory=True)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, pin_memory=True)
 
-    # 类别权重
+
     print("\n[3/5] Calculating class weights...")
     class_counts = [0, 0, 0, 0]
     for s in train_dataset.samples:
@@ -467,7 +466,7 @@ def main():
     optimizer = optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
-    # 训练
+
     print("\n[4/5] Training...")
     best_kappa = -1
     patience_cnt = 0
@@ -497,7 +496,7 @@ def main():
                 print(f"\nEarly stopping at epoch {epoch + 1}")
                 break
 
-    # 测试
+
     print("\n[5/5] Testing...")
     ckpt = torch.load(os.path.join(args.output_dir, 'best_model.pth'))
     model.load_state_dict(ckpt['model_state_dict'])
@@ -516,7 +515,7 @@ def main():
         print(
             f"{name:<10} {results['precision'][i]:<10.4f} {results['recall'][i]:<10.4f} {results['f1'][i]:<10.4f} {results['support'][i]:<10}")
 
-    # 保存结果
+
     save_results = {
         'dataset': args.dataset,
         'accuracy': float(results['accuracy']),

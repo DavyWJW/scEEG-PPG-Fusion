@@ -1,13 +1,3 @@
-"""
-ABC数据集预处理工具
-从NSRR下载的EDF/XML文件 → 标准化HDF5格式（与MESA兼容）
-
-ABC数据集特点：
-- 49名受试者，最多3个时间点（baseline, 9-month, 18-month）
-- 包含PPG (Pleth通道)、EEG、ECG等信号
-- XML标注格式与CFS类似（NSRR标准格式）
-"""
-
 import os
 import sys
 import numpy as np
@@ -24,53 +14,51 @@ try:
     import mne
     from scipy import signal
 except ImportError as e:
-    print(f"❌ 缺少依赖: {e}")
-    print("请运行: pip install mne scipy")
+    print(f"❌ Missing dependency: {e}")
+    print("Please run: pip install mne scipy")
     sys.exit(1)
 
 print("=" * 80)
-print("ABC数据集预处理工具")
-print("EDF/XML → HDF5 (MESA兼容格式)")
+print("ABC Dataset Preprocessing Utility")
+print("EDF/XML → HDF5 (MESA-compatible format)")
 print("=" * 80)
 
 # ============================================================================
-# 配置部分
+# Configuration
 # ============================================================================
 
 CONFIG = {
-    # ABC数据根目录
     'abc_root': "H:/sleepdata/abc",
 
-    # 输出目录
     'output_dir': "./abc_processed",
 
-    # 目标格式参数（与MESA保持一致）
-    'target_fs': 34.13,  # SleepPPG-Net目标采样率
-    'epoch_length_sec': 30,  # Epoch长度(秒)
-    'samples_per_epoch': 1024,  # 每个epoch的采样点数 (34.13 * 30 ≈ 1024)
-    'target_epochs': 1200,  # 目标epoch数 (10小时)
-    'total_samples': 1228800,  # 总采样点数
+    'target_fs': 34.13,  # Target sampling rate used by SleepPPG-Net
+    'epoch_length_sec': 30,  # Epoch length (seconds)
+    'samples_per_epoch': 1024,  # Samples per epoch (34.13 * 30 ≈ 1024)
+    'target_epochs': 1200,  # Target number of epochs (10 hours)
+    'total_samples': 1228800,  # Total number of samples
 
-    # 滤波参数
-    'lowpass_cutoff': 8,  # 低通滤波截止频率 (Hz) - SleepPPG-Net使用8Hz
-    'filter_order': 8,  # 滤波器阶数
+    # Filtering parameters
+    'lowpass_cutoff': 8,  # Low-pass cutoff frequency (Hz) — SleepPPG-Net uses 8 Hz
+    'filter_order': 8,  # Filter order
 
-    # 数据裁剪
-    'clip_std': 3,  # 裁剪到±N个标准差
+    # Signal clipping
+    'clip_std': 3,  # Clip to ±N standard deviations
 
-    # 处理选项
-    'max_files_to_process': None,  # 限制处理数量 (None=全部)
-    'verbose': True,  # 详细输出
+    # Processing options
+    'max_files_to_process': None,  # Limit number of files to process (None = all)
+    'verbose': True,  # Verbose output
 
-    # 信号通道名称变体
+    # Variants of channel names
     'ppg_channel_variants': ['Pleth', 'PLETH', 'PPG', 'SpO2', 'Pulse'],
 }
 
 # ============================================================================
-# 睡眠分期映射
+# Sleep stage mapping
 # ============================================================================
 
-# ABC使用AASM标准，映射到4类
+# ABC uses the AASM standard; map to 4 classes
+
 STAGE_MAPPING = {
     # Wake
     'Wake|0': 0,
@@ -89,7 +77,7 @@ STAGE_MAPPING = {
     'Stage 3 sleep|3': 2,
     'NREM3': 2,
     'N3': 2,
-    'Stage 4 sleep|4': 2,  # 旧的R&K分期
+    'Stage 4 sleep|4': 2,  # old R&K stage
     'NREM4': 2,
 
     # REM
@@ -97,7 +85,7 @@ STAGE_MAPPING = {
     'REM': 3,
     'R': 3,
 
-    # 忽略的标签
+    # Labels to ignore
     'Movement|6': -1,
     'Movement': -1,
     'Unscored': -1,
@@ -106,18 +94,18 @@ STAGE_MAPPING = {
 
 
 # ============================================================================
-# 工具函数
+# Utility functions
 # ============================================================================
 
 def print_section(title):
-    """打印分节标题"""
+
     print("\n" + "=" * 80)
     print(title)
     print("=" * 80 + "\n")
 
 
 def format_time(seconds):
-    """格式化时间"""
+
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)
@@ -125,22 +113,22 @@ def format_time(seconds):
 
 
 # ============================================================================
-# 标注解析器
+# Annotation parser
 # ============================================================================
 
 class ABCAnnotationParser:
-    """解析ABC XML标注文件（NSRR格式）"""
+    """Parser for ABC XML annotation files (NSRR format)"""
 
     def __init__(self):
         self.label_mapping = STAGE_MAPPING
 
     def parse_nsrr_xml(self, xml_path):
         """
-        解析NSRR格式的XML标注
+        Parse NSRR-format XML annotations
 
-        返回:
-            events: 睡眠事件列表
-            error: 错误信息（如果有）
+        Returns:
+            events: list of sleep stage events
+            error: error message (if any)
         """
         try:
             tree = ET.parse(xml_path)
@@ -148,24 +136,24 @@ class ABCAnnotationParser:
 
             events = []
 
-            # 查找所有ScoredEvent
+            # Find all ScoredEvent entries
             for event in root.findall('.//ScoredEvent'):
                 event_type = event.find('EventType')
                 event_concept = event.find('EventConcept')
                 start = event.find('Start')
                 duration = event.find('Duration')
 
-                # 检查所有必需元素是否存在且有文本内容
+                # Check required fields exist
                 if event_type is None or event_concept is None or start is None or duration is None:
                     continue
 
-                # 检查文本内容是否存在
+                # Check text content exists
                 if event_type.text is None or event_concept.text is None:
                     continue
                 if start.text is None or duration.text is None:
                     continue
 
-                # 检查是否是睡眠分期事件
+                # Only keep sleep stage events
                 if 'Stages' in event_type.text:
                     events.append({
                         'concept': event_concept.text,
@@ -174,21 +162,21 @@ class ABCAnnotationParser:
                     })
 
             if len(events) == 0:
-                return None, f"未找到任何睡眠分期标注"
+                return None, "No sleep stage annotations found"
 
             return events, None
 
         except ET.ParseError as e:
-            return None, f"XML解析错误: {str(e)}"
+            return None, f"XML parsing error: {str(e)}"
         except Exception as e:
-            return None, f"解析失败: {str(e)}"
+            return None, f"Parsing failed: {str(e)}"
 
     def create_epoch_labels(self, events, total_duration_sec, epoch_length=30):
         """
-        从事件创建epoch级别的标签数组
+        Generate epoch-level labels from sleep events
 
-        返回:
-            labels: 标签数组 [n_epochs]
+        Returns:
+            labels: label array [n_epochs]
         """
         n_epochs = int(total_duration_sec // epoch_length)
         labels = np.full(n_epochs, -1, dtype=np.int8)
@@ -198,32 +186,31 @@ class ABCAnnotationParser:
             start_sec = event['start']
             duration_sec = event['duration']
 
-            # 映射标签
+            # Map label
             label = self.label_mapping.get(concept, -1)
 
-            # 计算影响的epoch范围
+            # Compute affected epoch range
             start_epoch = int(start_sec // epoch_length)
             end_epoch = int((start_sec + duration_sec) // epoch_length)
 
-            # 设置标签
+            # Assign labels
             for epoch_idx in range(start_epoch, min(end_epoch + 1, n_epochs)):
                 labels[epoch_idx] = label
 
         return labels
 
-
 # ============================================================================
-# PPG预处理器
+# PPG preprocessor
 # ============================================================================
 
 class ABCPPGPreprocessor:
-    """ABC PPG信号预处理（遵循SleepPPG-Net方法）"""
+    """ABC PPG signal preprocessing (following the SleepPPG-Net pipeline)"""
 
     def __init__(self, config):
         self.config = config
 
     def find_channel(self, channel_names, variants):
-        """查找信号通道"""
+        """Find the matching signal channel"""
         for variant in variants:
             for ch in channel_names:
                 if variant.upper() in ch.upper():
@@ -231,17 +218,17 @@ class ABCPPGPreprocessor:
         return None
 
     def load_signal(self, edf_path, channel_variants):
-        """加载指定通道的信号"""
+        """Load signal from the specified channel"""
         try:
             raw = mne.io.read_raw_edf(edf_path, preload=False, verbose=False)
 
-            # 查找通道
+            # Find channel
             channel = self.find_channel(raw.ch_names, channel_variants)
 
             if channel is None:
-                return None, None, f"未找到通道: {channel_variants}"
+                return None, None, f"Channel not found: {channel_variants}"
 
-            # 加载数据
+            # Load data
             raw.pick_channels([channel])
             raw.load_data()
 
@@ -253,29 +240,28 @@ class ABCPPGPreprocessor:
             return data, fs, None
 
         except Exception as e:
-            return None, None, f"加载失败: {str(e)}"
+            return None, None, f"Signal loading failed: {str(e)}"
 
     def preprocess_ppg(self, ppg_signal, original_fs):
         """
-        预处理PPG信号（按照SleepPPG-Net方法）
+        Preprocess PPG signal (SleepPPG-Net pipeline)
 
-        步骤:
-            1. 低通滤波（8Hz）
-            2. 下采样到34.13Hz
-            3. Clip到±3σ
-            4. Z-score标准化
-            5. 填充/截断到10小时
+        Steps:
+            1. Low-pass filtering (8 Hz)
+            2. Downsample to 34.13 Hz
+            3. Clip to ±3σ
+            4. Z-score normalization
+            5. Pad/truncate to 10 hours
 
-        返回:
-            processed_ppg: 处理后的PPG [1,228,800]
+        Returns:
+            processed_ppg: processed PPG signal [1,228,800]
         """
         target_fs = self.config['target_fs']
 
-        # 步骤1: 低通滤波
+        # Step 1: Low-pass filtering
         nyq = 0.5 * original_fs
         cutoff = self.config['lowpass_cutoff'] / nyq
 
-        # 确保cutoff < 1
         if cutoff >= 1:
             cutoff = 0.99
 
@@ -288,14 +274,14 @@ class ABCPPGPreprocessor:
         )
         filtered_ppg = signal.sosfiltfilt(sos, ppg_signal)
 
-        # 步骤2: 下采样到34.13Hz
+        # Step 2: Downsample to 34.13 Hz
         downsample_factor = original_fs / target_fs
         n_samples_new = int(len(filtered_ppg) / downsample_factor)
         original_indices = np.arange(len(filtered_ppg))
         new_indices = np.linspace(0, len(filtered_ppg) - 1, n_samples_new)
         downsampled_ppg = np.interp(new_indices, original_indices, filtered_ppg)
 
-        # 步骤3: Clip到±3σ
+        # Step 3: Clip to ±3σ
         mean = np.mean(downsampled_ppg)
         std = np.std(downsampled_ppg)
         clipped_ppg = np.clip(
@@ -304,10 +290,10 @@ class ABCPPGPreprocessor:
             mean + self.config['clip_std'] * std
         )
 
-        # 步骤4: Z-score标准化
+        # Step 4: Z-score normalization
         standardized_ppg = (clipped_ppg - mean) / (std + 1e-8)
 
-        # 步骤5: 填充/截断到10小时
+        # Step 5: Pad/truncate to 10 hours
         target_samples = self.config['total_samples']
         if len(standardized_ppg) < target_samples:
             pad_length = target_samples - len(standardized_ppg)
@@ -324,18 +310,17 @@ class ABCPPGPreprocessor:
 
     def segment_into_windows(self, ppg_signal):
         """
-        将连续信号分割成windows
+        Segment continuous signal into windows
 
-        返回:
+        Returns:
             windows: [1200, 1024]
         """
         samples_per_window = self.config['samples_per_epoch']
         n_windows = self.config['target_epochs']
 
-        # 确保信号长度正确
+        # Ensure correct signal length
         expected_length = n_windows * samples_per_window
         if len(ppg_signal) != expected_length:
-            # 调整长度
             if len(ppg_signal) < expected_length:
                 ppg_signal = np.pad(
                     ppg_signal,
@@ -345,18 +330,15 @@ class ABCPPGPreprocessor:
             else:
                 ppg_signal = ppg_signal[:expected_length]
 
-        # 重塑为windows
         windows = ppg_signal.reshape(n_windows, samples_per_window)
 
         return windows
 
-
 # ============================================================================
-# ABC数据集处理器
+# ABC dataset processor
 # ============================================================================
 
 class ABCDatasetProcessor:
-    """ABC数据集完整处理流程"""
 
     def __init__(self, config):
         self.config = config
@@ -365,52 +347,30 @@ class ABCDatasetProcessor:
         self.results = []
 
     def find_edf_xml_pairs(self):
-        """
-        查找所有EDF和XML文件配对
-
-        ABC数据集结构：
-        H:\sleepdata\abc\polysomnography\
-        ├── edfs\
-        │   ├── baseline\
-        │   │   └── abc-baseline-900001.edf
-        │   ├── 9-month\
-        │   └── 18-month\
-        └── annotations-events-nsrr\
-            ├── baseline\
-            │   └── abc-baseline-900001-nsrr.xml
-            ├── 9-month\
-            └── 18-month\
-
-        返回:
-            pairs: [{subject_id, visit, edf_path, xml_path, full_id}, ...]
-        """
         abc_root = Path(self.config['abc_root'])
         polysomnography_dir = abc_root / "polysomnography"
 
         pairs = []
 
-        # 访问类型列表
         visits = ['baseline']
 
         for visit in visits:
-            # EDF目录
             edf_dir = polysomnography_dir / "edfs" / visit
-            # XML目录 - 每个visit有单独的子目录
             xml_dir = polysomnography_dir / "annotations-events-nsrr" / visit
 
             if not edf_dir.exists():
                 if self.config['verbose']:
-                    print(f"⚠️ EDF目录不存在: {edf_dir}")
+                    print(f"⚠️ EDF directory not found: {edf_dir}")
                 continue
 
             if not xml_dir.exists():
                 if self.config['verbose']:
-                    print(f"⚠️ XML目录不存在: {xml_dir}")
+                    print(f"⚠️ XML directory not found: {xml_dir}")
                 continue
 
-            # 遍历EDF文件
+            # Iterate over EDF files
             for edf_file in edf_dir.glob("*.edf"):
-                # 文件命名格式: abc-baseline-900001.edf
+                # Filename format: abc-baseline-900001.edf
                 filename = edf_file.stem  # abc-baseline-900001
                 parts = filename.split('-')
 
@@ -419,7 +379,7 @@ class ABCDatasetProcessor:
                 else:
                     subject_id = filename
 
-                # 查找对应的XML文件: abc-baseline-900001-nsrr.xml
+                # Corresponding XML file: abc-baseline-900001-nsrr.xml
                 xml_file = xml_dir / f"{filename}-nsrr.xml"
 
                 if xml_file.exists():
@@ -432,57 +392,55 @@ class ABCDatasetProcessor:
                     })
                 else:
                     if self.config['verbose']:
-                        print(f"⚠️ 未找到XML: {filename}-nsrr.xml")
+                        print(f"⚠️ XML not found: {filename}-nsrr.xml")
 
         return pairs
 
     def process_single_file(self, pair_info):
-        """处理单个文件"""
+        """Process a single EDF/XML pair"""
         subject_id = pair_info['full_id']
         edf_path = pair_info['edf_path']
         xml_path = pair_info['xml_path']
 
         try:
-            # 1. 加载PPG信号
+            # 1. Load PPG signal
             ppg_signal, fs, error = self.preprocessor.load_signal(
                 edf_path,
                 self.config['ppg_channel_variants']
             )
 
             if error:
-                return None, f"PPG加载失败: {error}"
+                return None, f"PPG loading failed: {error}"
 
-            # 获取原始时长
             duration_sec = len(ppg_signal) / fs
 
-            # 2. 解析标注
+            # 2. Parse annotations
             events, error = self.parser.parse_nsrr_xml(xml_path)
             if error:
-                return None, f"标注解析失败: {error}"
+                return None, f"Annotation parsing failed: {error}"
 
-            # 3. 创建epoch标签
+            # 3. Create epoch labels
             epoch_labels = self.parser.create_epoch_labels(
                 events,
                 duration_sec,
                 self.config['epoch_length_sec']
             )
 
-            # 4. 预处理PPG信号
+            # 4. Preprocess PPG signal
             processed_ppg = self.preprocessor.preprocess_ppg(ppg_signal, fs)
 
-            # 5. 分割成windows
+            # 5. Segment into windows
             ppg_windows = self.preprocessor.segment_into_windows(processed_ppg)
 
-            # 6. 处理标签
+            # 6. Process labels
             target_epochs = self.config['target_epochs']
             if len(epoch_labels) < target_epochs:
-                # 填充为-1
                 final_labels = np.full(target_epochs, -1, dtype=np.int64)
                 final_labels[:len(epoch_labels)] = epoch_labels
             else:
                 final_labels = epoch_labels[:target_epochs].astype(np.int64)
 
-            # 7. 统计
+            # 7. Statistics
             valid_mask = final_labels >= 0
             n_valid = np.sum(valid_mask)
 
@@ -490,7 +448,7 @@ class ABCDatasetProcessor:
             for i in range(4):
                 label_counts[i] = np.sum(final_labels == i)
 
-            # 8. 创建结果（只保留PPG相关数据）
+            # 8. Build result (PPG-only, MESA-compatible)
             result = {
                 'subject_id': subject_id,
                 'ppg': ppg_windows,  # [1200, 1024]
@@ -505,14 +463,13 @@ class ABCDatasetProcessor:
 
         except Exception as e:
             import traceback
-            return None, f"处理失败: {str(e)}\n{traceback.format_exc()}"
+            return None, f"Processing failed: {str(e)}\n{traceback.format_exc()}"
 
     def save_hdf5(self, result, output_dir):
-        """保存为HDF5格式（只保留PPG信号，与MESA兼容）"""
+        """Save as HDF5 (PPG-only, MESA-compatible)"""
         output_path = Path(output_dir) / f"{result['subject_id']}.h5"
 
         with h5py.File(output_path, 'w') as f:
-            # 只保存PPG数据
             f.create_dataset(
                 'ppg',
                 data=result['ppg'],
@@ -520,10 +477,8 @@ class ABCDatasetProcessor:
                 compression_opts=4
             )
 
-            # 保存标签
             f.create_dataset('labels', data=result['labels'])
 
-            # 保存元数据
             f.attrs['subject_id'] = result['subject_id']
             f.attrs['fs'] = result['fs']
             f.attrs['n_valid_epochs'] = result['n_valid_epochs']
@@ -532,39 +487,38 @@ class ABCDatasetProcessor:
         return output_path
 
     def run(self):
-        """运行完整处理流程"""
-        print_section("ABC数据集预处理流程")
+        """Run the full preprocessing pipeline"""
+        print_section("ABC dataset preprocessing pipeline")
 
-        # 创建输出目录
         output_dir = Path(self.config['output_dir'])
         output_dir.mkdir(exist_ok=True, parents=True)
 
-        # 1. 查找文件配对
-        print("📁 查找EDF/XML文件配对...")
+        # 1. Find EDF/XML pairs
+        print("📁 Searching for EDF/XML pairs...")
         pairs = self.find_edf_xml_pairs()
 
         if not pairs:
-            print("❌ 未找到任何文件配对!")
-            print(f"请检查目录: {self.config['abc_root']}")
+            print("❌ No EDF/XML pairs found!")
+            print(f"Please check the directory: {self.config['abc_root']}")
             return
 
-        print(f"✅ 找到 {len(pairs)} 对文件")
+        print(f"✅ Found {len(pairs)} file pairs")
 
-        # 显示示例
+        # Show examples
         if pairs:
-            print("\n示例:")
+            print("\nExamples:")
             for p in pairs[:3]:
                 print(f"  - {p['full_id']}: {Path(p['edf_path']).name}")
 
-        # 限制处理数量
+        # Limit processing
         if self.config['max_files_to_process']:
             pairs = pairs[:self.config['max_files_to_process']]
-            print(f"\n⚠️ 测试模式: 只处理前 {len(pairs)} 个文件")
+            print(f"\n⚠️ Test mode: only processing the first {len(pairs)} files")
 
-        # 2. 处理
-        print_section("开始预处理")
-        print(f"📊 待处理文件: {len(pairs)}")
-        print(f"📁 输出目录: {output_dir}")
+        # 2. Process
+        print_section("Start preprocessing")
+        print(f"📊 Files to process: {len(pairs)}")
+        print(f"📁 Output directory: {output_dir}")
 
         import time
         start_time = time.time()
@@ -572,11 +526,10 @@ class ABCDatasetProcessor:
         success_count = 0
         failed_count = 0
 
-        for pair_info in tqdm(pairs, desc="预处理进度"):
+        for pair_info in tqdm(pairs, desc="Preprocessing"):
             result, error = self.process_single_file(pair_info)
 
             if result is not None:
-                # 保存HDF5
                 h5_path = self.save_hdf5(result, output_dir)
 
                 self.results.append({
@@ -603,80 +556,71 @@ class ABCDatasetProcessor:
 
         elapsed = time.time() - start_time
 
-        # 3. 生成报告
+        # 3. Report
         self.generate_report(elapsed, success_count, failed_count)
 
-        # 4. 保存结果文件
+        # 4. Save outputs
         self.save_results(output_dir)
 
     def generate_report(self, elapsed_time, success_count, failed_count):
-        """生成报告"""
-        print_section("预处理完成")
+        """Generate a summary report"""
+        print_section("Preprocessing completed")
 
-        print(f"⏱️ 总耗时: {format_time(elapsed_time)}")
-        print(f"⚡ 平均速度: {elapsed_time / (success_count + failed_count):.2f} 秒/文件")
+        print(f"⏱️ Total time: {format_time(elapsed_time)}")
+        print(f"⚡ Average speed: {elapsed_time / (success_count + failed_count):.2f} sec/file")
         print()
 
-        print(f"📊 结果统计:")
-        print(f"   成功: {success_count}")
-        print(f"   失败: {failed_count}")
-        print(f"   成功率: {success_count / (success_count + failed_count) * 100:.1f}%")
+        print("📊 Summary:")
+        print(f"   Successful: {success_count}")
+        print(f"   Failed: {failed_count}")
+        print(f"   Success rate: {success_count / (success_count + failed_count) * 100:.1f}%")
 
-        # 成功文件的统计
         if success_count > 0:
             success_results = [r for r in self.results if r['success']]
-
             total_epochs = sum(r['n_valid_epochs'] for r in success_results)
 
-            # 标签分布统计
             total_label_counts = np.zeros(4, dtype=np.int64)
             for r in success_results:
                 total_label_counts += np.array(r['label_distribution'])
 
-            print(f"\n📈 数据统计:")
-            print(f"   总有效epoch数: {total_epochs:,}")
+            print("\n📈 Data statistics:")
+            print(f"   Total valid epochs: {total_epochs:,}")
 
-            # 按visit统计
             visits = {}
             for r in success_results:
                 v = r['visit']
-                if v not in visits:
-                    visits[v] = 0
-                visits[v] += 1
+                visits[v] = visits.get(v, 0) + 1
 
-            print(f"\n📅 访问分布:")
+            print("\n📅 Visit distribution:")
             for v, count in sorted(visits.items()):
-                print(f"   {v}: {count} 文件")
+                print(f"   {v}: {count} files")
 
-            print(f"\n📊 标签分布:")
+            print("\n📊 Label distribution:")
             label_names = ['Wake', 'Light', 'Deep', 'REM']
-            for i, (name, count) in enumerate(zip(label_names, total_label_counts)):
+            for name, count in zip(label_names, total_label_counts):
                 percentage = count / total_epochs * 100 if total_epochs > 0 else 0
                 print(f"   {name:10s}: {count:8,} ({percentage:5.2f}%)")
 
     def save_results(self, output_dir):
-        """保存结果文件"""
-        print_section("保存结果文件")
+        """Save output files"""
+        print_section("Saving outputs")
 
         output_dir = Path(output_dir)
         success_results = [r for r in self.results if r['success']]
 
         if success_results:
-            # 1. 被试ID列表
             ids_file = output_dir / "processed_subject_ids.txt"
             with open(ids_file, 'w') as f:
                 for r in success_results:
                     f.write(r['subject_id'] + '\n')
-            print(f"✅ 被试ID列表: {ids_file}")
+            print(f"✅ Subject ID list: {ids_file}")
 
-            # 2. HDF5文件列表
             h5_list_file = output_dir / "h5_file_list.txt"
             with open(h5_list_file, 'w') as f:
                 for r in success_results:
                     f.write(r['h5_path'] + '\n')
-            print(f"✅ HDF5文件列表: {h5_list_file}")
+            print(f"✅ HDF5 file list: {h5_list_file}")
 
-            # 3. 详细统计CSV
             import csv
             stats_file = output_dir / "processing_statistics.csv"
             with open(stats_file, 'w', newline='') as f:
@@ -695,42 +639,29 @@ class ABCDatasetProcessor:
                         'deep': r['label_distribution'][2],
                         'rem': r['label_distribution'][3],
                     })
-            print(f"✅ 详细统计: {stats_file}")
+            print(f"✅ Detailed statistics: {stats_file}")
 
         print()
-        print_section("全部完成")
-        print(f"📁 所有HDF5文件保存在: {output_dir}")
-        print(f"📊 成功处理: {len(success_results)} 个文件")
-        print(f"🎯 可直接用于fine-tuning!")
+        print_section("All done")
+        print(f"📁 All HDF5 files are saved to: {output_dir}")
+        print(f"📊 Successfully processed: {len(success_results)} files")
+        print("🎯 Ready for fine-tuning!")
 
 
 # ============================================================================
-# 合并HDF5文件（用于训练）
+# Merge HDF5 files (for training)
 # ============================================================================
 
 def merge_abc_to_single_hdf5(processed_dir, output_file):
-    """
-    将所有处理后的ABC HDF5文件合并为单个文件（与MESA格式兼容）
-    只保留PPG信号和标签
-    同时生成subject_index文件
 
-    输出格式:
-        abc_ppg_with_labels.h5:
-            ppg: [total_windows, 1024]
-            labels: [total_windows]
-
-        abc_subject_index.h5:
-            subjects/{subject_id}/window_indices: 索引数组
-            subjects/{subject_id}.attrs: n_windows等
-    """
     processed_dir = Path(processed_dir)
     h5_files = list(processed_dir.glob("*.h5"))
 
-    # 排除已存在的合并文件和索引文件
+    # Exclude previously merged files and index files
     h5_files = [f for f in h5_files if 'abc_ppg_with_labels' not in f.name
                 and 'abc_subject_index' not in f.name]
 
-    print(f"📁 找到 {len(h5_files)} 个HDF5文件")
+    print(f"📁 Found {len(h5_files)} HDF5 files")
 
     all_ppg = []
     all_labels = []
@@ -738,12 +669,12 @@ def merge_abc_to_single_hdf5(processed_dir, output_file):
 
     current_idx = 0
 
-    for h5_file in tqdm(h5_files, desc="合并文件"):
+    for h5_file in tqdm(h5_files, desc="Merging files"):
         with h5py.File(h5_file, 'r') as f:
-            ppg = f['ppg'][:]  # [1200, 1024]
+            ppg = f['ppg'][:]      # [1200, 1024]
             labels = f['labels'][:]  # [1200]
 
-            # 只保留有效的epochs (labels >= 0)
+            # Keep only valid epochs
             valid_mask = labels >= 0
             valid_ppg = ppg[valid_mask]
             valid_labels = labels[valid_mask]
@@ -751,7 +682,7 @@ def merge_abc_to_single_hdf5(processed_dir, output_file):
             n_windows = len(valid_ppg)
 
             if n_windows == 0:
-                print(f"⚠️ 跳过无有效数据: {h5_file.name}")
+                print(f"⚠️ Skipping file with no valid data: {h5_file.name}")
                 continue
 
             all_ppg.append(valid_ppg)
@@ -766,94 +697,97 @@ def merge_abc_to_single_hdf5(processed_dir, output_file):
 
             current_idx += n_windows
 
-    # 合并
     all_ppg = np.concatenate(all_ppg, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
 
-    print(f"\n📊 合并结果:")
-    print(f"   PPG形状: {all_ppg.shape}")
-    print(f"   标签形状: {all_labels.shape}")
-    print(f"   被试数: {len(subject_info)}")
+    print("\n📊 Merge results:")
+    print(f"   PPG shape: {all_ppg.shape}")
+    print(f"   Label shape: {all_labels.shape}")
+    print(f"   Subjects: {len(subject_info)}")
 
-    # 标签分布
-    print(f"\n📊 标签分布:")
+    print("\n📊 Label distribution:")
     label_names = ['Wake', 'Light', 'Deep', 'REM']
     for i in range(4):
         count = np.sum(all_labels == i)
         pct = count / len(all_labels) * 100
         print(f"   {label_names[i]}: {count:,} ({pct:.1f}%)")
 
-    # 保存主数据文件
-    print(f"\n💾 保存主数据文件...")
+    print("\n💾 Saving main dataset file...")
     with h5py.File(output_file, 'w') as f:
         f.create_dataset('ppg', data=all_ppg, compression='gzip')
         f.create_dataset('labels', data=all_labels)
-    print(f"✅ 保存到: {output_file}")
+    print(f"✅ Saved to: {output_file}")
 
-    # 保存subject索引文件（与MESA格式兼容）
     index_file = output_file.parent / "abc_subject_index.h5"
-    print(f"\n💾 保存被试索引文件...")
+
+    print("\n💾 Saving subject index file...")
     with h5py.File(index_file, 'w') as f:
         subjects_grp = f.create_group('subjects')
+
         for info in subject_info:
             subj_grp = subjects_grp.create_group(info['subject_id'])
             subj_grp.attrs['n_windows'] = info['n_windows']
             subj_grp.attrs['visit'] = info['visit']
             subj_grp.create_dataset(
                 'window_indices',
-                data=np.arange(info['start_idx'], info['start_idx'] + info['n_windows'])
+                data=np.arange(info['start_idx'],
+                               info['start_idx'] + info['n_windows'])
             )
-    print(f"✅ 保存到: {index_file}")
 
-    # 打印被试统计
-    print(f"\n📊 被试统计:")
+    print(f"✅ Saved to: {index_file}")
+
+    print("\n📊 Subject statistics:")
     visits_count = {}
+
     for info in subject_info:
         v = info['visit']
         visits_count[v] = visits_count.get(v, 0) + 1
-    for v, c in sorted(visits_count.items()):
-        print(f"   {v}: {c} 被试")
 
-    # 检查是否所有被试都有1200个windows（完整10小时）
-    complete_subjects = sum(1 for info in subject_info if info['n_windows'] == 1200)
-    print(f"\n   完整记录 (1200 windows): {complete_subjects}/{len(subject_info)}")
+    for v, c in sorted(visits_count.items()):
+        print(f"   {v}: {c} subjects")
+
+    complete_subjects = sum(
+        1 for info in subject_info if info['n_windows'] == 1200
+    )
+
+    print(f"\n   Complete recordings (1200 windows): "
+          f"{complete_subjects}/{len(subject_info)}")
 
     return output_file, index_file
 
 
 # ============================================================================
-# 主函数
+# Main function
 # ============================================================================
 
 def main():
-    """主函数"""
-    print(f"\n开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    """Main entry point"""
 
-    # 显示配置
-    print("配置信息:")
-    print(f"  ABC根目录: {CONFIG['abc_root']}")
-    print(f"  输出目录: {CONFIG['output_dir']}")
-    print(f"  目标采样率: {CONFIG['target_fs']} Hz")
-    print(f"  Epoch长度: {CONFIG['epoch_length_sec']}s")
-    print(f"  目标epochs: {CONFIG['target_epochs']}")
+    print(f"\nStart time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+    print("Configuration:")
+    print(f"  ABC root: {CONFIG['abc_root']}")
+    print(f"  Output directory: {CONFIG['output_dir']}")
+    print(f"  Target sampling rate: {CONFIG['target_fs']} Hz")
+    print(f"  Epoch length: {CONFIG['epoch_length_sec']} s")
+    print(f"  Target epochs: {CONFIG['target_epochs']}")
 
     if CONFIG['max_files_to_process']:
-        print(f"  ⚠️ 测试模式: 只处理 {CONFIG['max_files_to_process']} 个文件")
+        print(f"  ⚠️ Test mode: processing only "
+              f"{CONFIG['max_files_to_process']} files")
 
     print("\n" + "=" * 80)
-    print("确认开始处理? (y/n): ", end='')
+    print("Proceed with processing? (y/n): ", end='')
     response = input().strip().lower()
 
     if response != 'y':
-        print("\n已取消")
+        print("\nCancelled")
         return
 
-    # 运行预处理
     processor = ABCDatasetProcessor(CONFIG)
     processor.run()
 
-    # 询问是否合并
-    print("\n是否合并为单个HDF5文件? (y/n): ", end='')
+    print("\nMerge into a single HDF5 file? (y/n): ", end='')
     response = input().strip().lower()
 
     if response == 'y':
@@ -861,19 +795,20 @@ def main():
         merge_abc_to_single_hdf5(CONFIG['output_dir'], output_file)
 
     print("=" * 80)
-    print(f"结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80 + "\n")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt:
-        print("\n\n⚠️ 用户中断")
-        sys.exit(0)
-    except Exception as e:
-        print(f"\n\n❌ 错误: {e}")
-        import traceback
 
+    except KeyboardInterrupt:
+        print("\n\n⚠️ Interrupted by user")
+        sys.exit(0)
+
+    except Exception as e:
+        print(f"\n\n❌ Error: {e}")
+        import traceback
         traceback.print_exc()
         sys.exit(1)
