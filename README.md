@@ -94,9 +94,10 @@ python train/train_mamba_fusion_mesa.py
 ```
 
 ### 3. Cross-dataset Validation
-3.1 Data Preprocessing
-# CFS dataset - EEG preprocessing (C3-M2 montage)
+#### 3.1 Data Preprocessing
+# CFS dataset - EEG and PPG preprocessing
 python cross-dataset/cfs/eeg_data_processing.py
+python cross-dataset/cfs/cfs_dataset.py
 
 # ABC dataset - EEG and PPG preprocessing
 python cross-dataset/abc/prepare_abc_eeg.py
@@ -192,6 +193,7 @@ This project is licensed under the MIT License.
   year={2025}
 }
 ```
+
 
 
 
