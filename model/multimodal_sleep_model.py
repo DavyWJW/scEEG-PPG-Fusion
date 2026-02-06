@@ -1,13 +1,10 @@
-"""
-多模态睡眠分期模型
-"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import weight_norm
 
 
-# 从SleepPPG-Net复用的组件
+
 class ResConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ResConvBlock, self).__init__()
@@ -102,7 +99,7 @@ class TemporalConvNet(nn.Module):
         return self.network(x)
 
 
-# 新增的交叉模态注意力模块
+
 class CrossModalAttention(nn.Module):
     def __init__(self, feature_dim, num_heads=8):
         super(CrossModalAttention, self).__init__()
@@ -120,49 +117,49 @@ class CrossModalAttention(nn.Module):
     def forward(self, ppg_features, ecg_features):
         batch_size, channels, length = ppg_features.shape
 
-        # 转换为 (batch, length, channels)
+
         ppg_features = ppg_features.transpose(1, 2)
         ecg_features = ecg_features.transpose(1, 2)
 
-        # 计算Q, K, V
+
         Q = self.query_proj(ppg_features)
         K = self.key_proj(ecg_features)
         V = self.value_proj(ecg_features)
 
-        # 多头注意力
+
         Q = Q.view(batch_size, length, self.num_heads, self.head_dim).transpose(1, 2)
         K = K.view(batch_size, length, self.num_heads, self.head_dim).transpose(1, 2)
         V = V.view(batch_size, length, self.num_heads, self.head_dim).transpose(1, 2)
 
-        # 注意力计算
+
         attention_scores = torch.matmul(Q, K.transpose(-2, -1)) / (self.head_dim ** 0.5)
         attention_probs = F.softmax(attention_scores, dim=-1)
         attention_probs = self.dropout(attention_probs)
 
-        # 应用注意力
+
         context = torch.matmul(attention_probs, V)
         context = context.transpose(1, 2).contiguous().view(batch_size, length, self.feature_dim)
 
-        # 输出投影
+
         output = self.out_proj(context)
 
-        # 残差连接
+
         output = output + ppg_features
 
-        # 转换回 (batch, channels, length)
+
         output = output.transpose(1, 2)
 
         return output
 
 
-# 多模态睡眠分期网络
+
 class MultiModalSleepNet(nn.Module):
     def __init__(self, fusion_strategy='attention'):
         super(MultiModalSleepNet, self).__init__()
 
         self.fusion_strategy = fusion_strategy
 
-        # PPG编码器
+
         self.ppg_encoder = nn.Sequential(
             ResConvBlock(1, 16),
             ResConvBlock(16, 16),
@@ -174,7 +171,7 @@ class MultiModalSleepNet(nn.Module):
             ResConvBlock(128, 256),
         )
 
-        # ECG编码器
+
         self.ecg_encoder = nn.Sequential(
             ResConvBlock(1, 16),
             ResConvBlock(16, 16),
@@ -186,7 +183,7 @@ class MultiModalSleepNet(nn.Module):
             ResConvBlock(128, 256),
         )
 
-        # 融合层
+
         if fusion_strategy == 'concat':
             self.fusion_dim = 512  # 256 + 256
             self.fusion_layer = nn.Identity()
@@ -204,55 +201,55 @@ class MultiModalSleepNet(nn.Module):
                 nn.Sigmoid()
             )
 
-        # 时序建模
+
         self.dense = nn.Linear(self.fusion_dim * 4, 128)
         self.tcnblock1 = TemporalConvNet(128, 128, kernel_size=7, dropout=0.2)
         self.tcnblock2 = TemporalConvNet(128, 128, kernel_size=7, dropout=0.2)
 
-        # 输出层
+
         self.final_conv = nn.Conv1d(128, 4, 1)
 
     def forward(self, ppg, ecg):
-        # 特征提取
+
         ppg_features = self.ppg_encoder(ppg)  # (B, 256, 4800)
         ecg_features = self.ecg_encoder(ecg)  # (B, 256, 4800)
 
-        # 特征融合
+
         if self.fusion_strategy == 'concat':
             fused_features = torch.cat([ppg_features, ecg_features], dim=1)
         elif self.fusion_strategy == 'attention':
             fused_features = self.fusion_layer(ppg_features, ecg_features)
         elif self.fusion_strategy == 'gated':
-            # 门控融合
+
             ppg_gate = self.ppg_gate(ppg_features.mean(dim=2)).unsqueeze(2)
             ecg_gate = self.ecg_gate(ecg_features.mean(dim=2)).unsqueeze(2)
             fused_features = ppg_gate * ppg_features + ecg_gate * ecg_features
 
-        # 重塑特征
+
         batch_size, channels, length = fused_features.shape
 
-        # 将4800重塑为1200×4
+
         fused_features = fused_features.view(batch_size, channels, 1200, 4)
         fused_features = fused_features.permute(0, 1, 3, 2).contiguous()
         fused_features = fused_features.view(batch_size, -1, 1200)
 
-        # 时间分布式全连接
+
         fused_features = fused_features.transpose(1, 2)  # (B, 1200, channels*4)
         fused_features = self.dense(fused_features)  # (B, 1200, 128)
         fused_features = fused_features.transpose(1, 2)  # (B, 128, 1200)
 
-        # TCN块
+
         x = self.tcnblock1(fused_features)
         x = self.tcnblock2(x)
 
-        # 最终分类
+
         x = self.final_conv(x)  # (B, 4, 1200)
         x = F.softmax(x, dim=1)
 
         return x
 
 
-# PPG-only baseline模型（复用SleepPPG-Net）
+
 class SleepPPGNet(nn.Module):
     def __init__(self):
         super(SleepPPGNet, self).__init__()
@@ -295,25 +292,24 @@ class SleepPPGNet(nn.Module):
 
 
 def test_models():
-    """测试模型"""
-    # 测试输入
+
     batch_size = 2
-    ppg = torch.randn(batch_size, 1, 1228800)  # 10小时数据
+    ppg = torch.randn(batch_size, 1, 1228800)
     ecg = torch.randn(batch_size, 1, 1228800)
 
-    # 测试PPG-only模型
+
     print("Testing PPG-only model...")
     ppg_model = SleepPPGNet()
     ppg_output = ppg_model(ppg)
-    print(f"PPG-only output shape: {ppg_output.shape}")  # 应该是 (2, 4, 1200)
+    print(f"PPG-only output shape: {ppg_output.shape}")
 
-    # 测试多模态模型
+
     print("\nTesting MultiModal model...")
     mm_model = MultiModalSleepNet(fusion_strategy='attention')
     mm_output = mm_model(ppg, ecg)
-    print(f"MultiModal output shape: {mm_output.shape}")  # 应该是 (2, 4, 1200)
+    print(f"MultiModal output shape: {mm_output.shape}")
 
-    # 参数量统计
+
     ppg_params = sum(p.numel() for p in ppg_model.parameters())
     mm_params = sum(p.numel() for p in mm_model.parameters())
     print(f"\nPPG-only parameters: {ppg_params:,}")

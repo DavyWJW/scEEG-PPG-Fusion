@@ -1,7 +1,7 @@
 """
 Train and Evaluate EEG-PPG Cross-Attention + Mamba TCM Fusion Model on MESA
 
-用法:
+
 python train_mamba_fusion_mesa.py \
     --eeg_model ../../work/mesa-short_window/outputs/eeg_window_3min/best_model.pth \
     --ppg_model ../../work/mesa-short_window/outputs/short_window/3min_2/best_model.pth \
@@ -34,7 +34,7 @@ from cross_attention_mamba_fusion import create_mamba_fusion_model
 
 
 class FusionDataset(Dataset):
-    """EEG-PPG融合数据集"""
+
     
     def __init__(self,
                  eeg_folders: list,
@@ -50,7 +50,7 @@ class FusionDataset(Dataset):
         self.epochs_per_window = window_minutes * 2
         self.samples_per_epoch = samples_per_epoch
         
-        # 构建EEG文件映射（多个文件夹）
+
         self.eeg_file_map = {}
         for folder in eeg_folders:
             if os.path.exists(folder):
@@ -277,7 +277,7 @@ def main():
     print("Cross-Attention + Mamba TCM Fusion - MESA")
     print("=" * 70)
     
-    # 创建模型
+
     print("\n[1/5] Creating model...")
     model = create_mamba_fusion_model(
         args.eeg_model, args.ppg_model, args.device,
@@ -286,13 +286,13 @@ def main():
         freeze_encoders=True
     )
     
-    # 加载数据
+
     print("\n[2/5] Loading data...")
     with open(args.testset_json) as f:
         test_subjects = json.load(f)
     test_set = set(test_subjects)
     
-    # 从多个EEG文件夹获取所有subjects
+
     all_subjects = []
     for folder in args.eeg_folders:
         if os.path.exists(folder):
@@ -318,7 +318,7 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True)
     
-    # 类别权重
+
     print("\n[3/5] Calculating class weights...")
     class_counts = [0, 0, 0, 0]
     for s in train_dataset.samples:
@@ -335,7 +335,7 @@ def main():
     optimizer = optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     
-    # 训练
+
     print("\n[4/5] Training...")
     best_kappa = -1
     patience_cnt = 0
@@ -367,7 +367,7 @@ def main():
                 print(f"\nEarly stopping at epoch {epoch+1}")
                 break
     
-    # 测试
+
     print("\n[5/5] Testing...")
     ckpt = torch.load(os.path.join(args.output_dir, 'best_model.pth'))
     model.load_state_dict(ckpt['model_state_dict'])
@@ -403,7 +403,7 @@ def main():
     for i, name in enumerate(['Wake','Light','Deep','REM']):
         print(f"{name:<10} {prec[i]:<10.4f} {rec[i]:<10.4f} {f1[i]:<10.4f} {supp[i]:<10}")
     
-    # 保存结果
+
     params = model.get_trainable_params()
     results = {
         'accuracy': float(acc),
@@ -421,7 +421,7 @@ def main():
     plot_confusion_matrix(cm, os.path.join(args.output_dir, 'confusion_matrix.png'),
                           'Cross-Attention + Mamba TCM Fusion - MESA Test')
     
-    # 对比
+
     print("\n" + "=" * 70)
     print("COMPARISON")
     print("=" * 70)

@@ -1,7 +1,6 @@
 """
 Evaluate EEG-PPG Cross-Attention Fusion Model
 
-用法:
 python evaluate_cross_attention_fusion.py \
     --fusion_model ./outputs/cross_attention_fusion/best_model.pth \
     --eeg_model ../../work/mesa-short_window/outputs/eeg_window_3min/best_model.pth \
@@ -27,14 +26,13 @@ import h5py
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# 添加模型路径
+
 sys.path.insert(0, '../../work/mesa-short_window')
 
 from cross_attention_fusion import create_fusion_model, EEGPPGCrossAttentionFusion
 
 
 class FusionTestDataset(Dataset):
-    """EEG-PPG融合测试数据集"""
     
     def __init__(self, 
                  eeg_folders: list,
@@ -43,15 +41,7 @@ class FusionTestDataset(Dataset):
                  subject_ids: list,
                  window_minutes: int = 3,
                  samples_per_epoch: int = 1024):
-        """
-        Args:
-            eeg_folders: EEG npz文件目录列表
-            ppg_h5_path: PPG数据H5文件路径
-            ppg_index_path: PPG索引H5文件路径
-            subject_ids: 使用的subject ID列表
-            window_minutes: 窗口长度（分钟）
-            samples_per_epoch: 每个epoch的PPG采样数
-        """
+
         self.eeg_folders = eeg_folders
         self.ppg_h5_path = ppg_h5_path
         self.ppg_index_path = ppg_index_path
@@ -59,7 +49,7 @@ class FusionTestDataset(Dataset):
         self.epochs_per_window = window_minutes * 2
         self.samples_per_epoch = samples_per_epoch
         
-        # 构建EEG文件路径映射
+
         self.eeg_file_map = {}
         for folder in eeg_folders:
             if os.path.exists(folder):
@@ -70,51 +60,51 @@ class FusionTestDataset(Dataset):
                             sid = sid.replace('mesa-sleep-', '')
                         self.eeg_file_map[sid] = os.path.join(folder, fname)
         
-        # 加载PPG数据
+
         self.ppg_h5 = h5py.File(ppg_h5_path, 'r')
         self.ppg_data = self.ppg_h5['ppg']
         self.ppg_labels = self.ppg_h5['labels']
         
-        # 加载PPG索引
+
         self.ppg_index_h5 = h5py.File(ppg_index_path, 'r')
         
-        # 构建样本索引
+
         self.samples = []
         self._build_samples(subject_ids)
         
         print(f"Loaded {len(self.samples)} test samples from {len(subject_ids)} subjects")
     
     def _build_samples(self, subject_ids):
-        """构建测试样本索引"""
+
         matched_subjects = 0
         
         for sid in subject_ids:
             sid_str = str(sid).zfill(4) if isinstance(sid, int) else sid
             
-            # 检查EEG数据
+
             if sid_str not in self.eeg_file_map:
                 continue
             eeg_path = self.eeg_file_map[sid_str]
             
-            # 检查PPG索引数据
+
             ppg_key = f'subjects/{sid_str}/window_indices'
             if ppg_key not in self.ppg_index_h5:
                 continue
             
             matched_subjects += 1
             
-            # 加载EEG数据
+
             eeg_data = np.load(eeg_path)
             eeg_signals = eeg_data['x']
             eeg_labels = eeg_data['y']
             
-            # 加载PPG索引
+
             ppg_indices = self.ppg_index_h5[ppg_key][:]
             
-            # 确保数据长度匹配
+
             n_epochs = min(len(eeg_signals), len(ppg_indices))
             
-            # 标签映射
+
             mapped_labels = []
             for label in eeg_labels[:n_epochs]:
                 if isinstance(label, bytes):
@@ -132,7 +122,7 @@ class FusionTestDataset(Dataset):
                     mapped_labels.append(-1)
             mapped_labels = np.array(mapped_labels)
             
-            # 创建窗口样本
+
             n_windows = n_epochs // self.epochs_per_window
             
             for win_idx in range(n_windows):
@@ -159,22 +149,22 @@ class FusionTestDataset(Dataset):
     def __getitem__(self, idx):
         sample = self.samples[idx]
         
-        # 加载EEG数据
+
         eeg_data = np.load(sample['eeg_path'])
         eeg_signals = eeg_data['x']
         start = sample['eeg_start']
         end = start + self.epochs_per_window
         eeg_window = eeg_signals[start:end]
         
-        # Z-score标准化
+
         eeg_window = (eeg_window - eeg_window.mean()) / (eeg_window.std() + 1e-8)
         
-        # 加载PPG数据
+
         ppg_indices = sample['ppg_indices']
         ppg_epochs = self.ppg_data[ppg_indices]
         ppg_window = ppg_epochs.flatten()
         
-        # Z-score标准化
+
         ppg_window = (ppg_window - ppg_window.mean()) / (ppg_window.std() + 1e-8)
         
         labels = sample['labels']
@@ -194,7 +184,7 @@ class FusionTestDataset(Dataset):
 
 
 def evaluate(model, dataloader, device):
-    """评估模型"""
+
     model.eval()
     
     all_preds = []
@@ -211,7 +201,7 @@ def evaluate(model, dataloader, device):
             outputs = model(eeg, ppg)
             preds = outputs.argmax(dim=-1).cpu().numpy()
             
-            # 展平
+
             for i in range(len(preds)):
                 all_preds.extend(preds[i])
                 all_labels.extend(labels[i].numpy())
@@ -224,13 +214,13 @@ def evaluate(model, dataloader, device):
 
 
 def plot_confusion_matrix(cm, class_names, output_path):
-    """绘制混淆矩阵"""
+
     plt.figure(figsize=(10, 8))
     
-    # 计算百分比
+
     cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
     
-    # 创建标注文本
+
     annot = np.empty_like(cm, dtype=object)
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
@@ -277,14 +267,14 @@ def main():
     
     args = parser.parse_args()
     
-    # 创建输出目录
+
     os.makedirs(args.output_dir, exist_ok=True)
     
     print("=" * 60)
     print("EEG-PPG Cross-Attention Fusion Evaluation")
     print("=" * 60)
     
-    # 创建融合模型
+
     print("\nLoading models...")
     model = create_fusion_model(
         eeg_model_path=args.eeg_model,
@@ -294,13 +284,13 @@ def main():
         freeze_encoders=True
     )
     
-    # 加载训练好的融合层权重
+
     checkpoint = torch.load(args.fusion_model, map_location=args.device)
     model.load_state_dict(checkpoint['model_state_dict'])
     print(f"Loaded fusion model from {args.fusion_model}")
     print(f"  Best validation Kappa: {checkpoint.get('val_kappa', 'N/A')}")
     
-    # 统计参数量
+
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     eeg_params = sum(p.numel() for p in model.eeg_model.parameters())
@@ -313,18 +303,18 @@ def main():
     print(f"  Fusion Layers: {fusion_params/1e6:.2f}M")
     print(f"  Total: {total_params/1e6:.2f}M")
     
-    # 测量推理时间
+
     print("\nMeasuring inference time...")
     model.eval()
     dummy_eeg = torch.randn(1, 6, 3000).to(args.device)
     dummy_ppg = torch.randn(1, 6144).to(args.device)
     
-    # Warmup
+
     with torch.no_grad():
         for _ in range(10):
             _ = model(dummy_eeg, dummy_ppg)
     
-    # 测量多次
+
     import time
     n_runs = 100
     times = []
@@ -346,7 +336,7 @@ def main():
     inference_std = np.std(times)
     print(f"  Inference time: {inference_mean:.2f} ms ± {inference_std:.2f} ms per window")
     
-    # 加载测试集
+
     print("\nLoading test dataset...")
     with open(args.testset_json, 'r') as f:
         test_subjects = json.load(f)
@@ -362,11 +352,11 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size,
                              shuffle=False, num_workers=4, pin_memory=True)
     
-    # 评估
+
     print("\nEvaluating on test set...")
     preds, labels, subjects = evaluate(model, test_loader, args.device)
     
-    # 计算指标
+
     accuracy = accuracy_score(labels, preds)
     kappa = cohen_kappa_score(labels, preds)
     cm = confusion_matrix(labels, preds)
@@ -377,7 +367,7 @@ def main():
     
     macro_f1 = precision_recall_fscore_support(labels, preds, average='macro')[2]
     
-    # 打印结果
+
     print("\n" + "=" * 60)
     print("TEST RESULTS")
     print("=" * 60)
@@ -395,7 +385,7 @@ def main():
     print("\nConfusion Matrix:")
     print(cm)
     
-    # 保存结果
+
     results = {
         'accuracy': float(accuracy),
         'kappa': float(kappa),
@@ -428,13 +418,13 @@ def main():
     with open(os.path.join(args.output_dir, 'test_results.json'), 'w') as f:
         json.dump(results, f, indent=2)
     
-    # 绘制混淆矩阵
+
     plot_confusion_matrix(
         cm, class_names,
         os.path.join(args.output_dir, 'confusion_matrix.png')
     )
     
-    # 保存详细分类报告
+
     report = classification_report(labels, preds, target_names=class_names)
     with open(os.path.join(args.output_dir, 'classification_report.txt'), 'w') as f:
         f.write("Cross-Attention Fusion Model - Test Results\n")
@@ -447,7 +437,7 @@ def main():
     
     print(f"\nResults saved to {args.output_dir}")
     
-    # 对比之前的结果
+
     print("\n" + "=" * 70)
     print("COMPARISON WITH PREVIOUS METHODS")
     print("=" * 70)

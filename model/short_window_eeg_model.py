@@ -1,18 +1,9 @@
-"""
-短窗口EEG AttnSleep模型
-处理多个连续的30秒EEG epochs（3分钟、5分钟、10分钟、30分钟）
-对每个epoch进行独立特征提取，然后通过序列建模整合时序信息
-"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
 from copy import deepcopy
 
-
-# ============================================================================
-# 基础组件（来自原始AttnSleep）
-# ============================================================================
 
 class SELayer(nn.Module):
     def __init__(self, channel, reduction=16):
@@ -70,7 +61,7 @@ class GELU(nn.Module):
 
 
 class MRCNN(nn.Module):
-    """多分辨率CNN特征提取器"""
+
 
     def __init__(self, afr_reduced_cnn_size):
         super(MRCNN, self).__init__()
@@ -135,12 +126,9 @@ class MRCNN(nn.Module):
         return x_concat
 
 
-# ============================================================================
-# 序列建模组件
-# ============================================================================
 
 class PositionalEncoding(nn.Module):
-    """位置编码"""
+
 
     def __init__(self, d_model, max_len=100):
         super(PositionalEncoding, self).__init__()
@@ -156,10 +144,6 @@ class PositionalEncoding(nn.Module):
         # x: (batch, seq_len, d_model)
         return x + self.pe[:, :x.size(1), :]
 
-
-# ============================================================================
-# AttnSleep原始Transformer组件
-# ============================================================================
 
 def clones(module, N):
     """Produce N identical layers."""
@@ -274,7 +258,7 @@ class TCE(nn.Module):
 
 
 class TemporalTransformer(nn.Module):
-    """时序Transformer用于epoch间建模"""
+
 
     def __init__(self, d_model, n_heads=4, n_layers=2, dropout=0.1):
         super(TemporalTransformer, self).__init__()
@@ -297,15 +281,10 @@ class TemporalTransformer(nn.Module):
         return x
 
 
-# ============================================================================
-# 短窗口AttnSleep模型
-# ============================================================================
+
 
 class ShortWindowAttnSleep(nn.Module):
-    """
-    短窗口AttnSleep模型
-    处理多个连续的30秒EEG epochs
-    """
+
 
     def __init__(self, window_minutes=5, num_classes=4):
         super(ShortWindowAttnSleep, self).__init__()
@@ -319,26 +298,25 @@ class ShortWindowAttnSleep(nn.Module):
         print(f"  Epochs per window: {self.epochs_per_window}")
         print(f"  Number of classes: {num_classes}")
 
-        # AttnSleep参数
+
         afr_reduced_cnn_size = 30
 
-        # 单epoch特征提取器（共享权重）
+
         self.mrcnn = MRCNN(afr_reduced_cnn_size)
 
-        # 动态计算d_model（MRCNN输出的时间维度）
-        # 测试一下实际输出维度
+
         with torch.no_grad():
-            test_input = torch.randn(1, 1, 3000)  # 假设30秒@100Hz = 3000采样点
+            test_input = torch.randn(1, 1, 3000)
             test_output = self.mrcnn(test_input)
-            d_model = test_output.shape[2]  # 时间维度
+            d_model = test_output.shape[2]
             print(f"  MRCNN output shape: {test_output.shape}")
             print(f"  d_model (temporal dim): {d_model}")
 
-        # Epoch内注意力（原AttnSleep的TCE）
+
         h = 7
-        # 确保d_model能被h整除
+
         if d_model % h != 0:
-            # 调整h使其能整除d_model
+
             for new_h in [8, 5, 4, 2, 1]:
                 if d_model % new_h == 0:
                     h = new_h
@@ -353,18 +331,18 @@ class ShortWindowAttnSleep(nn.Module):
         ff = PositionwiseFeedForward(d_model, d_ff, dropout)
         self.tce = TCE(EncoderLayer(d_model, deepcopy(attn), deepcopy(ff), afr_reduced_cnn_size, dropout), N)
 
-        # Epoch特征维度
+
         self.epoch_feature_dim = d_model * afr_reduced_cnn_size
         print(f"  Epoch feature dim: {self.epoch_feature_dim}")
 
-        # 特征压缩
+
         self.feature_compress = nn.Sequential(
             nn.Linear(self.epoch_feature_dim, 256),
             nn.ReLU(),
             nn.Dropout(0.3)
         )
 
-        # 时序建模（跨epoch）
+
         self.temporal_transformer = TemporalTransformer(
             d_model=256,
             n_heads=4,
@@ -372,7 +350,7 @@ class ShortWindowAttnSleep(nn.Module):
             dropout=0.1
         )
 
-        # 分类头（为每个epoch预测）
+
         self.classifier = nn.Linear(256, num_classes)
 
     def forward(self, x):
@@ -384,46 +362,44 @@ class ShortWindowAttnSleep(nn.Module):
         """
         batch_size, num_epochs, signal_length = x.shape
 
-        # 1. 对每个epoch独立提取特征
-        # 重塑为 (batch * num_epochs, 1, signal_length)
+
         x_reshaped = x.view(batch_size * num_epochs, 1, signal_length)
 
-        # MRCNN特征提取
+
         epoch_features = self.mrcnn(x_reshaped)  # (batch * num_epochs, afr_size, feature_len)
 
-        # TCE注意力
+
         epoch_features = self.tce(epoch_features)  # (batch * num_epochs, afr_size, d_model)
 
-        # 展平
+
         epoch_features = epoch_features.contiguous().view(batch_size * num_epochs, -1)
         # (batch * num_epochs, epoch_feature_dim)
 
-        # 特征压缩
+
         epoch_features = self.feature_compress(epoch_features)  # (batch * num_epochs, 256)
 
-        # 重塑为序列
-        epoch_features = epoch_features.view(batch_size, num_epochs, -1)
-        # (batch, num_epochs, 256)
 
-        # 2. 时序建模（跨epoch依赖）
+        epoch_features = epoch_features.view(batch_size, num_epochs, -1)
+
+
         temporal_features = self.temporal_transformer(epoch_features)
         # (batch, num_epochs, 256)
 
-        # 3. 为每个epoch分类
+
         output = self.classifier(temporal_features)
         # (batch, num_epochs, num_classes)
 
         return output
 
     def get_epoch_predictions(self, x):
-        """获取每个epoch的预测概率"""
+
         output = self.forward(x)
         probs = F.softmax(output, dim=-1)
         return probs
 
 
 def test_model():
-    """测试不同窗口长度的模型"""
+
     print("Testing Short Window EEG AttnSleep Models...")
 
     for window_min in [3, 5, 10, 30]:
@@ -433,8 +409,7 @@ def test_model():
 
         model = ShortWindowAttnSleep(window_minutes=window_min)
 
-        # 测试输入
-        # 假设EEG信号长度为3000（30秒 * 100Hz）
+
         signal_length = 3000
         epochs_per_window = window_min * 2
 
@@ -442,13 +417,13 @@ def test_model():
 
         print(f"Input shape: {x.shape}")
 
-        # 前向传播
+
         try:
             output = model(x)
             print(f"Output shape: {output.shape}")
             print(f"Expected: (4, {epochs_per_window}, 4)")
 
-            # 参数量统计
+
             total_params = sum(p.numel() for p in model.parameters())
             trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
             print(f"Total parameters: {total_params:,}")
@@ -459,7 +434,7 @@ def test_model():
             import traceback
             traceback.print_exc()
 
-        # 清理
+
         del model
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

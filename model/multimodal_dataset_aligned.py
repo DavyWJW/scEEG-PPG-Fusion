@@ -1,6 +1,3 @@
-"""
-多模态睡眠数据集类 - 与SleepPPG-Net测试集对齐版本
-"""
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
@@ -8,7 +5,7 @@ import h5py
 from sklearn.model_selection import train_test_split
 import os
 
-# SleepPPG-Net使用的204个测试用户
+
 SLEEPPPG_TEST_SUBJECTS = [
     "0001", "0021", "0033", "0052", "0077", "0081", "0101", "0111", "0225", "0310",
     "0314", "0402", "0416", "0445", "0465", "0483", "0505", "0554", "0572", "0587",
@@ -37,29 +34,19 @@ SLEEPPPG_TEST_SUBJECTS = [
 class MultiModalSleepDataset(Dataset):
     def __init__(self, data_path, split='train', use_generated_ecg=False,
                  transform=None, seed=42, use_sleepppg_test_set=True):
-        """
-        多模态睡眠数据集 - 返回10小时连续信号
 
-        Args:
-            data_path: 数据目录路径或文件路径字典
-            split: 'train', 'val', or 'test'
-            use_generated_ecg: 是否使用生成的ECG
-            transform: 数据增强
-            seed: 随机种子
-            use_sleepppg_test_set: 是否使用SleepPPG-Net的测试集划分
-        """
         self.split = split
         self.use_generated_ecg = use_generated_ecg
         self.transform = transform
         self.seed = seed
         self.use_sleepppg_test_set = use_sleepppg_test_set
 
-        # 每个受试者的窗口数和样本数
+
         self.windows_per_subject = 1200
         self.samples_per_window = 1024
         self.total_samples = self.windows_per_subject * self.samples_per_window
 
-        # 支持两种输入方式
+
         if isinstance(data_path, dict):
             self.ppg_file_path = data_path['ppg']
             self.ecg_file_path = data_path.get('ecg', data_path.get('real_ecg'))
@@ -72,7 +59,7 @@ class MultiModalSleepDataset(Dataset):
                 self.ecg_file_path = os.path.join(data_path, 'mesa_real_ecg.h5')
             self.index_file_path = os.path.join(data_path, 'mesa_subject_index.h5')
 
-        # 检查文件是否存在
+
         if not os.path.exists(self.ppg_file_path):
             raise FileNotFoundError(f"PPG file not found: {self.ppg_file_path}")
         if not os.path.exists(self.ecg_file_path):
@@ -85,16 +72,15 @@ class MultiModalSleepDataset(Dataset):
         print(f"  ECG: {self.ecg_file_path}")
         print(f"  Index: {self.index_file_path}")
 
-        # 准备受试者列表
+
         self._prepare_subjects()
 
     def _prepare_subjects(self):
-        """准备受试者列表"""
-        # 获取所有受试者
+
         with h5py.File(self.index_file_path, 'r') as f:
             all_subjects = list(f['subjects'].keys())
 
-            # 只保留有完整1200个窗口的受试者
+
             valid_subjects = []
             for subj in all_subjects:
                 n_windows = f[f'subjects/{subj}'].attrs['n_windows']
@@ -102,28 +88,28 @@ class MultiModalSleepDataset(Dataset):
                     valid_subjects.append(subj)
 
         if self.use_sleepppg_test_set:
-            # 使用SleepPPG-Net的测试集划分
+
             test_subjects = [s for s in SLEEPPPG_TEST_SUBJECTS if s in valid_subjects]
             train_val_subjects = [s for s in valid_subjects if s not in test_subjects]
 
-            # 打印统计信息
+
             print(f"Using SleepPPG-Net test set split:")
             print(f"  Total valid subjects: {len(valid_subjects)}")
             print(f"  Test subjects (from SleepPPG-Net): {len(test_subjects)}")
             print(f"  Train+Val subjects: {len(train_val_subjects)}")
 
-            # 验证是否所有204个测试用户都存在
+
             missing_subjects = [s for s in SLEEPPPG_TEST_SUBJECTS if s not in valid_subjects]
             if missing_subjects:
                 print(f"  WARNING: {len(missing_subjects)} test subjects not found in data:")
                 print(f"    {missing_subjects[:10]}..." if len(missing_subjects) > 10 else f"    {missing_subjects}")
 
-            # 进一步划分训练集和验证集
+
             train_subjects, val_subjects = train_test_split(
                 train_val_subjects, test_size=0.2, random_state=self.seed
             )
         else:
-            # 原始的随机划分
+
             train_subjects, test_subjects = train_test_split(
                 valid_subjects, test_size=0.2, random_state=self.seed
             )
@@ -131,7 +117,7 @@ class MultiModalSleepDataset(Dataset):
                 train_subjects, test_size=0.2, random_state=self.seed
             )
 
-        # 选择对应的受试者
+
         if self.split == 'train':
             self.subjects = train_subjects
         elif self.split == 'val':
@@ -141,7 +127,7 @@ class MultiModalSleepDataset(Dataset):
 
         print(f"{self.split} set: {len(self.subjects)} subjects")
 
-        # 获取每个受试者的起始索引
+
         self.subject_indices = {}
         with h5py.File(self.index_file_path, 'r') as f:
             for subj in self.subjects:
@@ -153,11 +139,11 @@ class MultiModalSleepDataset(Dataset):
         return len(self.subjects)
 
     def __getitem__(self, idx):
-        # 获取受试者ID和起始索引
+
         subject_id = self.subjects[idx]
         start_idx = self.subject_indices[subject_id]
 
-        # 读取该受试者的所有窗口
+
         with h5py.File(self.ppg_file_path, 'r') as f_ppg:
             ppg_windows = f_ppg['ppg'][start_idx:start_idx + self.windows_per_subject]
             labels = f_ppg['labels'][start_idx:start_idx + self.windows_per_subject]
@@ -165,15 +151,15 @@ class MultiModalSleepDataset(Dataset):
         with h5py.File(self.ecg_file_path, 'r') as f_ecg:
             ecg_windows = f_ecg['ecg'][start_idx:start_idx + self.windows_per_subject]
 
-        # 将窗口拼接成连续信号
+
         ppg_continuous = ppg_windows.reshape(-1)
         ecg_continuous = ecg_windows.reshape(-1)
 
-        # 数据增强
+
         if self.transform:
             ppg_continuous, ecg_continuous = self.transform(ppg_continuous, ecg_continuous)
 
-        # 转换为tensor
+
         ppg_tensor = torch.FloatTensor(ppg_continuous).unsqueeze(0)
         ecg_tensor = torch.FloatTensor(ecg_continuous).unsqueeze(0)
         labels_tensor = torch.LongTensor(labels)
@@ -182,7 +168,7 @@ class MultiModalSleepDataset(Dataset):
 
 
 class PPGOnlyDataset(Dataset):
-    """仅PPG的数据集 - 10小时连续信号版本"""
+
 
     def __init__(self, data_path, split='train', transform=None, seed=42,
                  use_sleepppg_test_set=True):
@@ -195,7 +181,7 @@ class PPGOnlyDataset(Dataset):
         self.samples_per_window = 1024
         self.total_samples = self.windows_per_subject * self.samples_per_window
 
-        # 支持两种输入方式
+
         if isinstance(data_path, dict):
             self.ppg_file_path = data_path['ppg']
             self.index_file_path = data_path['index']
@@ -203,7 +189,7 @@ class PPGOnlyDataset(Dataset):
             self.ppg_file_path = os.path.join(data_path, 'mesa_ppg_with_labels.h5')
             self.index_file_path = os.path.join(data_path, 'mesa_subject_index.h5')
 
-        # 检查文件存在
+
         if not os.path.exists(self.ppg_file_path):
             raise FileNotFoundError(f"PPG file not found: {self.ppg_file_path}")
         if not os.path.exists(self.index_file_path):
@@ -214,7 +200,7 @@ class PPGOnlyDataset(Dataset):
         self._prepare_subjects()
 
     def _prepare_subjects(self):
-        """准备受试者列表"""
+
         with h5py.File(self.index_file_path, 'r') as f:
             all_subjects = list(f['subjects'].keys())
 
@@ -225,7 +211,7 @@ class PPGOnlyDataset(Dataset):
                     valid_subjects.append(subj)
 
         if self.use_sleepppg_test_set:
-            # 使用SleepPPG-Net的测试集划分
+
             test_subjects = [s for s in SLEEPPPG_TEST_SUBJECTS if s in valid_subjects]
             train_val_subjects = [s for s in valid_subjects if s not in test_subjects]
 
@@ -233,12 +219,12 @@ class PPGOnlyDataset(Dataset):
             print(f"  Test subjects: {len(test_subjects)}")
             print(f"  Train+Val subjects: {len(train_val_subjects)}")
 
-            # 进一步划分训练集和验证集
+
             train_subjects, val_subjects = train_test_split(
                 train_val_subjects, test_size=0.2, random_state=self.seed
             )
         else:
-            # 原始的随机划分
+
             train_subjects, test_subjects = train_test_split(
                 valid_subjects, test_size=0.2, random_state=self.seed
             )
@@ -255,7 +241,7 @@ class PPGOnlyDataset(Dataset):
 
         print(f"{self.split} set: {len(self.subjects)} subjects")
 
-        # 获取起始索引
+
         self.subject_indices = {}
         with h5py.File(self.index_file_path, 'r') as f:
             for subj in self.subjects:
@@ -274,7 +260,7 @@ class PPGOnlyDataset(Dataset):
             ppg_windows = f['ppg'][start_idx:start_idx + self.windows_per_subject]
             labels = f['labels'][start_idx:start_idx + self.windows_per_subject]
 
-        # 拼接成连续信号
+
         ppg_continuous = ppg_windows.reshape(-1)
 
         if self.transform:
@@ -289,12 +275,7 @@ class PPGOnlyDataset(Dataset):
 def get_dataloaders(data_path, batch_size=1, num_workers=0,
                     use_generated_ecg=False, model_type='ppg_only',
                     use_sleepppg_test_set=True):
-    """
-    获取数据加载器
 
-    Args:
-        use_sleepppg_test_set: 是否使用SleepPPG-Net的204个测试用户
-    """
 
     if model_type == 'ppg_only':
         train_dataset = PPGOnlyDataset(
@@ -348,14 +329,14 @@ def get_dataloaders(data_path, batch_size=1, num_workers=0,
 
 
 def verify_test_set():
-    """验证测试集是否与SleepPPG-Net一致"""
+
     data_paths = {
         'ppg': "../../data/mesa_ppg_with_labels.h5",
         'real_ecg': "../../data/mesa_real_ecg.h5",
         'index': "../../data/mesa_subject_index.h5"
     }
 
-    # 创建测试数据集
+
     test_dataset = PPGOnlyDataset(
         data_paths, split='test',
         use_sleepppg_test_set=True
@@ -365,7 +346,7 @@ def verify_test_set():
     print(f"Number of test subjects: {len(test_dataset.subjects)}")
     print(f"Test subjects (first 10): {test_dataset.subjects[:10]}")
 
-    # 检查是否与SleepPPG-Net的测试集一致
+
     matched = set(test_dataset.subjects) == set(SLEEPPPG_TEST_SUBJECTS)
     print(f"Matches SleepPPG-Net test set: {matched}")
 
