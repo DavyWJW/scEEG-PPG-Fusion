@@ -94,7 +94,9 @@ python train/train_mamba_fusion_mesa.py
 ```
 
 ### 3. Cross-dataset Validation
+
 #### 3.1 Data Preprocessing
+```bash
 # CFS dataset - EEG and PPG preprocessing
 python cross-dataset/cfs/eeg_data_processing.py
 python cross-dataset/cfs/cfs_dataset.py
@@ -102,8 +104,10 @@ python cross-dataset/cfs/cfs_dataset.py
 # ABC dataset - EEG and PPG preprocessing
 python cross-dataset/abc/prepare_abc_eeg.py
 python cross-dataset/abc/prepare_abc_ppg.py
+```
 
-3.2 Zero-shot Evaluation (Without Fine-tuning)
+#### 3.2 Zero-shot Evaluation (Without Fine-tuning)
+```bash
 # CFS dataset
 python cross-dataset/cfs/cross_dataset_eeg_evaluation.py      # scEEG zero-shot
 python cross-dataset/cfs/cross_dataset_dualppg_evaluation.py  # PPG zero-shot
@@ -111,9 +115,10 @@ python cross-dataset/cfs/cross_dataset_dualppg_evaluation.py  # PPG zero-shot
 # ABC dataset
 python cross-dataset/abc/eval_eeg__zeroshot_abc.py            # scEEG zero-shot
 python cross-dataset/abc/eval_dual_ppg_zeroshot_abc.py        # PPG zero-shot
+```
 
-3.3 Fine-tuning on Target Dataset
-
+#### 3.3 Fine-tuning on Target Dataset
+```bash
 # CFS dataset - Fine-tune individual models
 python cross-dataset/cfs/finetune_eeg_on_cfs.py               # scEEG fine-tuning
 python cross-dataset/cfs/finetune_dual_ppg_on_cfs.py          # PPG fine-tuning
@@ -121,9 +126,10 @@ python cross-dataset/cfs/finetune_dual_ppg_on_cfs.py          # PPG fine-tuning
 # ABC dataset - Fine-tune individual models
 python cross-dataset/abc/finetune_eeg_on_abc.py               # scEEG fine-tuning
 python cross-dataset/abc/finetune_dual_ppg_on_abc.py          # PPG fine-tuning
+```
 
-3.4 Fusion Model Evaluation on Cross-dataset
-
+#### 3.4 Fusion Model Evaluation on Cross-dataset
+```bash
 # Score-level fusion
 python cross-dataset/cfs/cfs_score_fusion_short_window.py     # CFS
 python cross-dataset/abc/abc_score_fusion_short_window.py     # ABC
@@ -135,6 +141,7 @@ python cross-dataset/abc/finetune_cross_atten.py              # ABC
 # Mamba-enhanced fusion fine-tuning
 python cross-dataset/cfs/finetune_mamba_fusion.py             # CFS
 python cross-dataset/abc/finetune_mamba_fusion.py             # ABC
+```
 
 
 ## Results
@@ -193,6 +200,7 @@ This project is licensed under the MIT License.
   year={2025}
 }
 ```
+
 
 
 
