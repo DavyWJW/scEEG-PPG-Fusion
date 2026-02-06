@@ -1,12 +1,11 @@
 # Combining scEEG and PPG for Reliable Sleep Staging Using Lightweight Wearables
 
-This repository contains the official implementation for the paper:
+This repository contains the official implementation for ours paper:
 
 > **Combining scEEG and PPG for reliable sleep staging using lightweight wearables**
 
 ## Overview
-
-We investigate the fusion of single-channel EEG (scEEG) and photoplethysmography (PPG) for 4-class sleep staging (Wake, Light Sleep, Deep Sleep, REM) under short-window (30s–30min) constraints. Three fusion strategies are proposed and compared:
+We investigate the fusion of single-channel EEG (scEEG) and photoplethysmography (PPG) for 4-class sleep staging (Wake, Light Sleep, Deep Sleep, REM) under short-window (30s–30min) constraints, with a particular focus on improving Light Sleep classification—a historically challenging stage due to its transitional nature and subtle physiological signatures. Three fusion strategies are proposed and compared:
 
 - **Score-level fusion**: Weighted probability combination of independently trained scEEG and PPG models
 - **Cross-attention fusion**: Bidirectional feature-level interactions between modalities via multi-head cross-attention
@@ -154,13 +153,10 @@ python cross-dataset/cfs/finetune_eeg_on_cfs.py
 
 ### MESA Dataset (3-minute window)
 
-| Method | Accuracy | κ | F1-Wake | F1-Light | F1-Deep | F1-REM |
-|--------|----------|---|---------|----------|---------|--------|
-| scEEG only | 82.5% | 0.738 | 82.42% | 77.76% | 78.88% | 85.87% |
-| PPG only | 80.6% | 0.711 | 75.39% | 79.34% | 67.78% | 85.10% |
-| Score-level fusion | 85.2% | 0.776 | 83.62% | 82.93% | 78.67% | 88.29% |
-| Cross-attention fusion | 86.1% | 0.788 | 84.28% | 84.21% | 79.87% | 88.89% |
-| **Mamba-enhanced fusion** | **86.9%** | **0.798** | **85.04%** | **85.63%** | **80.22%** | **89.32%** |
+  <p align="center">
+    <img src="figures/architecture.png" width="90%" alt="Comparison of fusion models and SOTA methods under the 3-minute window"/>
+  </p>
+
 
 ### Cross-dataset Generalization
 
@@ -193,5 +189,25 @@ This project is licensed under the MIT License.
 ## Acknowledgments
 
 - Data provided by the [National Sleep Research Resource (NSRR)](https://sleepdata.org/)
-- AttnSleep architecture adapted from [Eldele et al., 2021](https://github.com/emadeldeen24/AttnSleep)
-- SleepPPG-Net baseline from [Kotzen et al., 2023](https://github.com/eth-siplab/SleepPPG-Net)
+  
+- EEG baseline from [Eldele et al., 2021](https://github.com/emadeldeen24/AttnSleep)
+  ```bibtex
+@article{wang2025sceeg,
+  title={Combining scEEG and PPG for reliable sleep staging using lightweight wearables},
+  author={Wang, Jiawei and Xu, Liang and Zheng, Shuntian and Guan, Yu and Wang, Kaichen and Zhang, Ziqing and Chen, Chen and Yang, Laurence T. and Gu, Sai},
+  journal={IEEE Transactions and Journals},
+  year={2025}
+}
+```
+
+
+- PPG baseline from [Kotzen et al., 2023](https://github.com/eth-siplab/SleepPPG-Net)
+```bibtex
+@article{wang2025sceeg,
+  title={Combining scEEG and PPG for reliable sleep staging using lightweight wearables},
+  author={Wang, Jiawei and Xu, Liang and Zheng, Shuntian and Guan, Yu and Wang, Kaichen and Zhang, Ziqing and Chen, Chen and Yang, Laurence T. and Gu, Sai},
+  journal={IEEE Transactions and Journals},
+  year={2025}
+}
+```
+
