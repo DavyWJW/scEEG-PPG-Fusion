@@ -12,55 +12,11 @@ We investigate the fusion of single-channel EEG (scEEG) and photoplethysmography
 - **Mamba-enhanced fusion**: Cross-attention fusion augmented with bidirectional Mamba temporal context modeling
 
 The Mamba-enhanced fusion achieves the best performance on the MESA dataset (Cohen's κ = 0.798, Accuracy = 86.9%), with notably improved light sleep classification (F1: 85.63% vs. 77.76% compared to scEEG alone).
+  <p align="center">
+    <img src="figures/architecture.png" width="90%" alt="Overview of three fusion strategies"/>
+  </p>
 
-## Repository Structure
 
-```
-scEEG/
-│
-├── model/                                    # Model architectures
-│   ├── short_window_eeg_model.py             # scEEG AttnSleep model
-│   ├── ppg_unfiltered_crossattn.py           # Dual-stream PPG model
-│   ├── cross_attention_fusion.py             # Cross-attention fusion model
-│   ├── cross_attention_mamba_fusion.py       # Mamba-enhanced fusion model
-│   ├── short_window_eeg_dataset.py           # EEG dataset loader
-│   ├── multimodal_dataset_aligned.py         # Multi-modal dataset loader
-│   ├── multimodal_sleep_model.py             # SleepPPG-Net baseline
-│   └── model.py                              # Base model components
-│
-├── train/                                    # Training & Evaluation on MESA
-│   ├── train_evaluate_single_eeg_window.py   # Train scEEG model
-│   ├── ppg_crossattn_shortwindow.py          # Train dual-stream PPG model
-│   ├── train_cross_attention_fusion.py       # Train cross-attention fusion
-│   ├── train_mamba_fusion_mesa.py            # Train Mamba-enhanced fusion
-│   ├── train_score_fusion.py                 # Score-level fusion training
-│   └── evaluate_cross_attention_fusion.py    # Evaluate cross-attention fusion
-│
-├── cross-dataset/                            # Cross-dataset validation
-│   ├── cfs/                                  # CFS dataset (719 subjects)
-│   │   ├── cfs_dataset.py                    # CFS data loader
-│   │   ├── eeg_data_processing.py            # CFS EEG preprocessing (C3-M2)
-│   │   ├── cross_dataset_eeg_evaluation.py   # Zero-shot scEEG evaluation
-│   │   ├── cross_dataset_dualppg_evalidation.py  # Zero-shot PPG evaluation
-│   │   ├── finetune_eeg_on_cfs.py            # Fine-tune scEEG on CFS
-│   │   ├── finetune_dual_ppg_on_cfs.py       # Fine-tune PPG on CFS
-│   │   ├── finetune_cross_atten.py           # Fine-tune cross-attention fusion
-│   │   ├── finetune_mamba_fusion.py          # Fine-tune Mamba fusion
-│   │   └── cfs_score_fusion_short_window.py  # CFS score-level fusion
-│   │
-│   └── abc/                                  # ABC dataset (49 subjects)
-│       ├── prepare_abc_eeg.py                # ABC EEG preprocessing
-│       ├── prepare_abc_ppg.py                # ABC PPG preprocessing
-│       ├── eval_eeg__zeroshot_abc.py         # Zero-shot scEEG evaluation
-│       ├── eval_dual_ppg_zeroshot_abc.py     # Zero-shot PPG evaluation
-│       ├── finetune_eeg_on_abc.py            # Fine-tune scEEG on ABC
-│       ├── finetune_dual_ppg_on_abc.py       # Fine-tune PPG on ABC
-│       ├── finetune_cross_atten.py           # Fine-tune cross-attention fusion
-│       ├── finetune_mamba_fusion.py          # Fine-tune Mamba fusion
-│       └── abc_score_fusion_short_window.py  # ABC score-level fusion
-│
-└── README.md
-```
 
 ## Datasets
 
@@ -154,21 +110,16 @@ python cross-dataset/cfs/finetune_eeg_on_cfs.py
 ### MESA Dataset (3-minute window)
 
   <p align="center">
-    <img src="figures/architecture.png" width="90%" alt="Comparison of fusion models and SOTA methods under the 3-minute window"/>
+    <img src="figures/performance_1.png" width="70%" alt="Comparison of fusion models and SOTA methods under the 3-minute window"/>
   </p>
 
 
 ### Cross-dataset Generalization
 
-| Dataset | Method | Zero-shot κ | Fine-tuned κ |
-|---------|--------|-------------|--------------|
-| CFS | scEEG | 0.621 | 0.689 |
-| CFS | PPG | 0.583 | 0.652 |
-| CFS | Mamba fusion | 0.658 | 0.721 |
-| ABC | scEEG | 0.589 | 0.667 |
-| ABC | PPG | 0.561 | 0.634 |
-| ABC | Mamba fusion | 0.623 | 0.698 |
-
+  <p align="center">
+    <img src="figures/performance_2.png" width="70%" alt="CComparison of κ across single-modality and fusion-based methods on the MESA, CFS, and ABC datasets"/>
+  </p>
+  
 ## Citation
 
 If you find this work useful, please cite:
@@ -210,4 +161,5 @@ This project is licensed under the MIT License.
   year={2025}
 }
 ```
+
 
