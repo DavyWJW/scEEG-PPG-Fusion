@@ -1,10 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-跨数据集验证脚本
-用MESA训练的AttnSleep模型在ABC数据集上测试
-
-使用方法:
     python cross_dataset_eeg_abc.py \
         --model_path ./mesa_eeg_model/best_model.pth \
         --abc_data_dir ./abc_eeg_data
@@ -32,9 +26,6 @@ from collections import defaultdict
 
 warnings.filterwarnings('ignore')
 
-# ============================================================================
-# 1. 模型组件 (从model.py复制，避免导入依赖问题)
-# ============================================================================
 
 import math
 import copy
@@ -269,7 +260,7 @@ class TCE(nn.Module):
 
 
 class AttnSleep4Class(nn.Module):
-    """4类别版本的AttnSleep模型"""
+
 
     def __init__(self):
         super(AttnSleep4Class, self).__init__()
@@ -298,21 +289,15 @@ class AttnSleep4Class(nn.Module):
         return final_output
 
 
-# ============================================================================
-# 2. ABC EEG数据集 (用于测试)
-# ============================================================================
 
 class ABCEEGTestDataset(Dataset):
-    """
-    ABC EEG测试数据集
-    5类标签转换为4类以匹配MESA模型
-    """
+
 
     def __init__(self, npz_files, verbose=True):
         if verbose:
-            print(f"🔧 加载 {len(npz_files)} 个ABC EEG文件用于测试...")
+            print(f" Loading {len(npz_files)} ABC EEG files for testing...")
 
-        # ABC标签已经是4类，无需映射
+
         # 0: Wake, 1: Light, 2: Deep, 3: REM
         self.label_map = {
             0: 0,  # Wake -> Wake
@@ -322,13 +307,13 @@ class ABCEEGTestDataset(Dataset):
         }
 
         self.file_sample_map = []
-        self.subject_sample_ranges = {}  # 用于per-patient评估
+        self.subject_sample_ranges = {}
         failed_files = []
 
         total_samples = 0
         class_counts = np.zeros(4, dtype=np.int64)
 
-        iterator = tqdm(npz_files, desc="加载ABC数据") if verbose else npz_files
+        iterator = tqdm(npz_files, desc="ABC") if verbose else npz_files
         for npz_file in iterator:
             try:
                 data = np.load(npz_file)
@@ -356,16 +341,14 @@ class ABCEEGTestDataset(Dataset):
 
         if verbose:
             if failed_files:
-                print(f"\n⚠️  {len(failed_files)} 个文件加载失败:")
+                print(f"  {len(failed_files)} files failed to load:")
                 for f, e in failed_files[:5]:
                     print(f"   - {Path(f).name}: {e}")
 
-            print(f"\n✅ ABC测试数据加载完成:")
             print(f"   总样本数: {total_samples:,}")
             print(f"   被试数: {len(npz_files) - len(failed_files)}")
 
             class_names = ['Wake', 'Light Sleep', 'Deep Sleep', 'REM']
-            print(f"\n📊 类别分布:")
             for i, (name, count) in enumerate(zip(class_names, class_counts)):
                 pct = count / total_samples * 100 if total_samples > 0 else 0
                 print(f"   {i}: {name}: {count:,} ({pct:.1f}%)")
@@ -388,7 +371,7 @@ class ABCEEGTestDataset(Dataset):
         x_tensor = torch.from_numpy(x.astype(np.float32)).unsqueeze(0)
         y_tensor = torch.tensor(y_label, dtype=torch.long)
 
-        # Z-score标准化
+
         x_tensor = (x_tensor - x_tensor.mean()) / (x_tensor.std() + 1e-8)
 
         return x_tensor, y_tensor, subject_id
@@ -397,44 +380,36 @@ class ABCEEGTestDataset(Dataset):
         return len(self.file_sample_map)
 
 
-# ============================================================================
-# 3. 跨数据集评估函数
-# ============================================================================
 
 def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
-    """
-    使用MESA训练的模型在ABC数据集上进行评估
-    """
-
     device = torch.device(f'cuda:{config["gpu_id"]}' if torch.cuda.is_available() else 'cpu')
-    print(f"\n🖥️  使用设备: {device}")
+    print(f"\n🖥️  Using device: {device}")
 
-    # ========== 1. 加载MESA训练的模型 ==========
-    print(f"\n📦 加载MESA训练的模型: {model_path}")
+    # ========== 1. Load MESA-trained model ==========
+    print(f"\n📦 Loading MESA-trained model: {model_path}")
 
     if not os.path.exists(model_path):
-        raise FileNotFoundError(f"模型文件不存在: {model_path}")
+        raise FileNotFoundError(f"Model file not found: {model_path}")
 
     model = AttnSleep4Class().to(device)
 
-    # 加载权重
     state_dict = torch.load(model_path, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()
 
-    print(f"✅ 模型加载成功")
-    print(f"   参数量: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"✅ Model loaded successfully")
+    print(f"   Parameter count: {sum(p.numel() for p in model.parameters()):,}")
 
-    # ========== 2. 加载ABC测试数据 ==========
-    print(f"\n📂 加载ABC测试数据: {abc_data_dir}")
+    # ========== 2. Load ABC test data ==========
+    print(f"\n📂 Loading ABC test data: {abc_data_dir}")
 
     npz_files = sorted(glob.glob(os.path.join(abc_data_dir, '*.npz')))
     if len(npz_files) == 0:
-        raise FileNotFoundError(f"未在 {abc_data_dir} 找到NPZ文件")
+        raise FileNotFoundError(f"No NPZ files found in {abc_data_dir}")
 
-    print(f"   找到 {len(npz_files)} 个被试文件")
+    print(f"   Found {len(npz_files)} subject files")
 
-    # 创建数据集和加载器
+
     test_dataset = ABCEEGTestDataset(npz_files, verbose=True)
     test_loader = DataLoader(
         test_dataset,
@@ -444,8 +419,8 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
         pin_memory=True
     )
 
-    # ========== 3. 在ABC上进行推理 ==========
-    print(f"\n🧪 在ABC数据集上进行推理...")
+    # ========== 3. Run inference on ABC ==========
+    print(f"\n🧪 Running inference on the ABC dataset...")
 
     all_preds = []
     all_labels = []
@@ -453,7 +428,7 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
     all_subjects = []
 
     with torch.no_grad():
-        for data, target, subject_ids in tqdm(test_loader, desc="推理进度"):
+        for data, target, subject_ids in tqdm(test_loader, desc="Inference progress"):
             data = data.to(device)
             output = model(data)
             probs = torch.softmax(output, dim=1)
@@ -468,19 +443,18 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
     all_labels = np.array(all_labels)
     all_probs = np.array(all_probs)
 
-    # ========== 4. 计算评估指标 ==========
-    print(f"\n📊 计算评估指标...")
+    # ========== 4. Compute evaluation metrics ==========
+    print(f" Computing evaluation metrics...")
 
-    # Overall指标
     accuracy = accuracy_score(all_labels, all_preds)
     kappa = cohen_kappa_score(all_labels, all_preds)
     f1_weighted = f1_score(all_labels, all_preds, average='weighted')
     f1_macro = f1_score(all_labels, all_preds, average='macro')
 
-    # 混淆矩阵
+
     cm = confusion_matrix(all_labels, all_preds)
 
-    # 每个类别的指标
+
     class_names = ['Wake', 'Light', 'Deep', 'REM']
     report = classification_report(
         all_labels, all_preds,
@@ -489,8 +463,8 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
         zero_division=0
     )
 
-    # ========== 5. Per-patient评估 ==========
-    print(f"\n📊 计算Per-patient指标...")
+    # ========== 5. Per-patient evaluation ==========
+    print(f" Computing per-patient metrics...")
 
     patient_results = defaultdict(lambda: {'preds': [], 'labels': []})
     for pred, label, subj in zip(all_preds, all_labels, all_subjects):
@@ -509,7 +483,7 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
         acc = accuracy_score(labels, preds)
         patient_accuracies.append(acc)
 
-        # 只有多类别时才计算kappa
+
         if len(np.unique(labels)) > 1:
             kap = cohen_kappa_score(labels, preds)
             patient_kappas.append(kap)
@@ -527,28 +501,28 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
             'n_epochs': len(labels)
         })
 
-    # 计算中位数
+
     median_accuracy = np.median(patient_accuracies)
     median_kappa = np.median([k for k in patient_kappas if not np.isnan(k)])
     median_f1 = np.median(patient_f1s)
 
-    # ========== 6. 打印结果 ==========
+    # ========== 6. Print results ==========
     print(f"\n{'=' * 70}")
-    print(f"跨数据集评估结果: MESA → ABC")
+    print(f"Cross-dataset evaluation results: MESA → ABC")
     print(f"{'=' * 70}")
 
-    print(f"\n📈 Overall指标:")
-    print(f"   准确率 (Accuracy): {accuracy * 100:.2f}%")
+    print(f"\n📈 Overall metrics:")
+    print(f"   Accuracy: {accuracy * 100:.2f}%")
     print(f"   Cohen's Kappa: {kappa:.4f}")
     print(f"   F1 Score (weighted): {f1_weighted:.4f}")
     print(f"   F1 Score (macro): {f1_macro:.4f}")
 
-    print(f"\n📈 Per-patient Median指标:")
-    print(f"   Median准确率: {median_accuracy * 100:.2f}%")
+    print(f"\n📈 Per-patient median metrics:")
+    print(f"   Median accuracy: {median_accuracy * 100:.2f}%")
     print(f"   Median Kappa: {median_kappa:.4f}")
     print(f"   Median F1: {median_f1:.4f}")
 
-    print(f"\n📊 Per-patient Kappa分布:")
+    print(f"\n📊 Per-patient Kappa distribution:")
     valid_kappas = [k for k in patient_kappas if not np.isnan(k)]
     print(f"   Min: {np.min(valid_kappas):.4f}")
     print(f"   25%: {np.percentile(valid_kappas, 25):.4f}")
@@ -556,8 +530,8 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
     print(f"   75%: {np.percentile(valid_kappas, 75):.4f}")
     print(f"   Max: {np.max(valid_kappas):.4f}")
 
-    print(f"\n📊 每个类别的性能:")
-    print(f"{'类别':<15} {'Precision':>10} {'Recall':>10} {'F1':>10} {'Support':>10}")
+    print(f"\n📊 Per-class performance:")
+    print(f"{'Class':<15} {'Precision':>10} {'Recall':>10} {'F1':>10} {'Support':>10}")
     print("-" * 55)
     for name in class_names:
         p = report[name]['precision']
@@ -566,11 +540,10 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
         s = report[name]['support']
         print(f"{name:<15} {p:>10.3f} {r:>10.3f} {f:>10.3f} {int(s):>10}")
 
-    print(f"\n分类报告:")
+    print(f"\nClassification report:")
     print(classification_report(all_labels, all_preds, target_names=class_names, zero_division=0))
 
-    # ========== 7. 可视化 ==========
-    # 混淆矩阵
+
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -591,7 +564,7 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
                 dpi=150, bbox_inches='tight')
     plt.close()
 
-    # Kappa分布图
+
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     axes[0].hist(valid_kappas, bins=20, edgecolor='black', alpha=0.7)
@@ -610,7 +583,7 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
                 dpi=150, bbox_inches='tight')
     plt.close()
 
-    # 每个类别的性能条形图
+
     fig, ax = plt.subplots(figsize=(10, 6))
 
     x = np.arange(len(class_names))
@@ -646,7 +619,7 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
                 dpi=150, bbox_inches='tight')
     plt.close()
 
-    # ========== 8. 保存结果 ==========
+
     results = {
         'experiment': 'Cross-Dataset Evaluation: MESA → ABC',
         'model_path': model_path,
@@ -694,7 +667,7 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
     patient_df = pd.DataFrame(patient_details)
     patient_df.to_csv(os.path.join(output_dir, 'patient_results.csv'), index=False)
 
-    print(f"\n💾 结果已保存到: {output_dir}")
+    print(f"\n💾 Result: {output_dir}")
     print(f"   - results.json")
     print(f"   - patient_results.csv")
     print(f"   - confusion_matrix.png")
@@ -704,35 +677,40 @@ def cross_dataset_evaluation(model_path, abc_data_dir, output_dir, config):
     return results
 
 
-# ============================================================================
-# 4. 主函数
-# ============================================================================
+
 
 def main():
-    parser = argparse.ArgumentParser(description='Cross-Dataset Evaluation: MESA → ABC')
+    parser = argparse.ArgumentParser(description='Cross-dataset evaluation: MESA → ABC')
+
     parser.add_argument('--model_path', type=str, required=True,
-                        help='MESA训练的模型路径 (.pth文件)')
+                        help='Path to the MESA-trained model (.pth file)')
+
     parser.add_argument('--abc_data_dir', type=str, required=True,
-                        help='ABC EEG NPZ文件目录')
+                        help='Directory containing ABC EEG NPZ files')
+
     parser.add_argument('--output_dir', type=str, default='./cross_dataset_eeg_abc_results',
-                        help='输出目录')
+                        help='Output directory')
+
     parser.add_argument('--batch_size', type=int, default=128,
                         help='Batch size')
+
     parser.add_argument('--gpu_id', type=int, default=0,
                         help='GPU ID')
+
     parser.add_argument('--num_workers', type=int, default=0,
-                        help='数据加载workers (Windows建议设为0)')
+                        help='Number of data loading workers (set to 0 on Windows)')
 
     args = parser.parse_args()
 
     print("=" * 70)
-    print("🔄 跨数据集验证: MESA → ABC (EEG)")
+    print("🔄 Cross-dataset evaluation: MESA → ABC (EEG)")
     print("=" * 70)
-    print("\n这个实验验证MESA训练的EEG模型在ABC数据集上的泛化能力")
+    print("\nThis experiment evaluates the generalization of the MESA-trained EEG model on the ABC dataset")
 
     if torch.cuda.is_available():
-        print(f"\n✅ CUDA可用")
-        print(f"   使用GPU {args.gpu_id}: {torch.cuda.get_device_name(args.gpu_id)}")
+        print(f"\n✅ CUDA available")
+        print(f"   Using GPU {args.gpu_id}: {torch.cuda.get_device_name(args.gpu_id)}")
+
     else:
         print("\n⚠️  CUDA不可用，使用CPU")
 
@@ -755,22 +733,21 @@ def main():
         )
 
         print(f"\n{'=' * 70}")
-        print(f"🎉 跨数据集评估完成!")
+        print(f"Cross-dataset evaluation completed!")
         print(f"{'=' * 70}")
-        print(f"\n最终结果 (MESA EEG模型 → ABC测试):")
-        print(f"   Overall准确率: {results['overall_metrics']['accuracy'] * 100:.2f}%")
+        print(f"\nFinal results (MESA EEG model → ABC test):")
+        print(f"   Overall: {results['overall_metrics']['accuracy'] * 100:.2f}%")
         print(f"   Overall Kappa: {results['overall_metrics']['kappa']:.4f}")
         print(f"   Median Kappa: {results['per_patient_metrics']['median_kappa']:.4f}")
         print(f"   F1 (weighted): {results['overall_metrics']['f1_weighted']:.4f}")
 
     except Exception as e:
-        print(f"\n❌ 错误: {e}")
+        print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
         return
 
     print("\n" + "=" * 70)
-    print("✅ 全部完成!")
     print("=" * 70)
 
 

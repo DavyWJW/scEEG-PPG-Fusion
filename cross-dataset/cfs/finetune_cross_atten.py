@@ -1,8 +1,6 @@
 """
 Fine-tuning EEG-PPG Cross-Attention Fusion Model on CFS/ABC
-在CFS或ABC数据集上fine-tune MESA预训练的模型
 
-用法:
 python finetune_cross_dataset.py \
     --fusion_model ./outputs/cross_attention_fusion_weighted/best_model.pth \
     --eeg_model ../../work/mesa-short_window/outputs/eeg_window_3min/best_model.pth \
@@ -37,7 +35,7 @@ from cross_attention_fusion import create_fusion_model
 
 
 class CrossDatasetFusionDataset(Dataset):
-    """CFS/ABC数据集"""
+
 
     def __init__(self,
                  eeg_folder: str,
@@ -56,13 +54,13 @@ class CrossDatasetFusionDataset(Dataset):
         self.samples_per_epoch = samples_per_epoch
         self.dataset_name = dataset_name
 
-        # 构建EEG文件路径映射
+
         self.eeg_file_map = {}
         if os.path.exists(eeg_folder):
             for fname in os.listdir(eeg_folder):
                 if fname.endswith('.npz'):
                     sid = fname.replace('.npz', '')
-                    # 处理不同格式的文件名
+
                     if dataset_name == 'abc':
                         # abc-baseline-900001 -> 900001_baseline
                         if 'baseline' in sid:
@@ -70,27 +68,27 @@ class CrossDatasetFusionDataset(Dataset):
                             num_id = parts[-1]  # 900001
                             sid = f"{num_id}_baseline"
                     elif '-' in sid:
-                        # 其他格式如 cfs-visit5-0001 -> 0001
+
                         parts = sid.split('-')
                         sid = parts[-1]
                     self.eeg_file_map[sid] = os.path.join(eeg_folder, fname)
 
-        # 加载PPG数据
+
         self.ppg_h5 = h5py.File(ppg_h5_path, 'r')
         self.ppg_data = self.ppg_h5['ppg']
         self.ppg_labels = self.ppg_h5['labels']
 
-        # 加载PPG索引
+
         self.ppg_index_h5 = h5py.File(ppg_index_path, 'r')
 
-        # 构建样本索引
+
         self.samples = []
         self._build_samples(subject_ids)
 
         print(f"Loaded {len(self.samples)} samples from {dataset_name.upper()}")
 
     def _build_samples(self, subject_ids=None):
-        """构建样本索引"""
+
         if 'subjects' in self.ppg_index_h5:
             ppg_subjects = list(self.ppg_index_h5['subjects'].keys())
         else:
@@ -100,16 +98,16 @@ class CrossDatasetFusionDataset(Dataset):
         print(f"  Sample PPG IDs: {ppg_subjects[:5]}")
         print(f"  Sample EEG IDs: {list(self.eeg_file_map.keys())[:5]}")
 
-        # 如果指定了subject_ids，只使用这些
+
         if subject_ids is not None:
-            # 对于ABC，subject_ids是 ['900001_baseline', ...] 格式
+
             ppg_subjects = [s for s in ppg_subjects if s in subject_ids]
             print(f"  Filtered to {len(ppg_subjects)} subjects based on subject_ids")
 
         matched_subjects = 0
 
         for sid in ppg_subjects:
-            # 检查EEG数据 - sid已经是正确格式如 '900001_baseline'
+
             if sid not in self.eeg_file_map:
                 continue
 
@@ -135,13 +133,13 @@ class CrossDatasetFusionDataset(Dataset):
                 label_int = int(label)
 
                 if self.dataset_name == 'abc':
-                    # ABC已经是4类格式: 0=Wake, 1=Light, 2=Deep, 3=REM
+
                     if label_int in [0, 1, 2, 3]:
                         mapped_labels.append(label_int)
                     else:
                         mapped_labels.append(-1)
                 else:
-                    # MESA/CFS是5类格式: 0=Wake, 1=N1, 2=N2, 3=N3, 4/5=REM
+
                     if label_int == 0:
                         mapped_labels.append(0)  # Wake
                     elif label_int in [1, 2]:
@@ -209,7 +207,7 @@ class CrossDatasetFusionDataset(Dataset):
 
 
 def train_epoch(model, dataloader, criterion, optimizer, device):
-    """训练一个epoch"""
+
     model.train()
 
     total_loss = 0
@@ -249,7 +247,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
 
 
 def validate(model, dataloader, criterion, device):
-    """验证"""
+
     model.eval()
 
     total_loss = 0
@@ -290,7 +288,7 @@ def validate(model, dataloader, criterion, device):
 
 
 def plot_confusion_matrix(cm, class_names, output_path, title):
-    """绘制混淆矩阵"""
+
     plt.figure(figsize=(10, 8))
 
     cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
@@ -312,7 +310,7 @@ def plot_confusion_matrix(cm, class_names, output_path, title):
 
 
 def measure_inference_time(model, device, n_runs=100):
-    """测量推理时间"""
+
     model.eval()
     dummy_eeg = torch.randn(1, 6, 3000).to(device)
     dummy_ppg = torch.randn(1, 6144).to(device)
@@ -383,7 +381,7 @@ def main():
     print(f"Fine-tuning Cross-Attention Fusion on {args.dataset.upper()}")
     print("=" * 70)
 
-    # 选择数据路径
+
     if args.dataset == 'cfs':
         eeg_folder = args.cfs_eeg_folder
         ppg_h5 = args.cfs_ppg_h5
@@ -393,7 +391,7 @@ def main():
         ppg_h5 = args.abc_ppg_h5
         ppg_index = args.abc_ppg_index
 
-    # ==================== 加载模型 ====================
+
     print("\n[1/5] Loading models...")
     model = create_fusion_model(
         eeg_model_path=args.eeg_model,
@@ -403,26 +401,26 @@ def main():
         freeze_encoders=True
     )
 
-    # 加载MESA预训练的融合层权重
+
     checkpoint = torch.load(args.fusion_model, map_location=args.device)
     model.load_state_dict(checkpoint['model_state_dict'])
     print(f"Loaded pretrained fusion model from {args.fusion_model}")
 
-    # 参数统计
+
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total_params / 1e6:.2f}M")
     print(f"Trainable parameters: {trainable_params / 1e6:.2f}M")
 
-    # ==================== 加载数据并划分 ====================
+
     print(f"\n[2/5] Loading {args.dataset.upper()} dataset...")
 
-    # 获取所有subjects
+
     ppg_index_h5 = h5py.File(ppg_index, 'r')
     all_subjects = list(ppg_index_h5['subjects'].keys())
     ppg_index_h5.close()
 
-    # 划分train/val/test
+
     np.random.seed(42)
     np.random.shuffle(all_subjects)
 
@@ -471,7 +469,7 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size,
                              shuffle=False, num_workers=4, pin_memory=True)
 
-    # ==================== 计算类别权重 ====================
+
     print("\n[3/5] Calculating class weights...")
     class_counts = [0, 0, 0, 0]
     for sample in train_dataset.samples:
@@ -490,12 +488,12 @@ def main():
 
     criterion = nn.CrossEntropyLoss(weight=class_weights)
 
-    # 只训练融合层（encoder已冻结）
+
     trainable_params_list = [p for p in model.parameters() if p.requires_grad]
     optimizer = optim.AdamW(trainable_params_list, lr=args.lr, weight_decay=args.weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
-    # ==================== 训练 ====================
+
     print("\n[4/5] Fine-tuning...")
     best_kappa = -1
     patience_counter = 0
@@ -548,18 +546,18 @@ def main():
     with open(os.path.join(args.output_dir, 'history.json'), 'w') as f:
         json.dump(history, f, indent=2)
 
-    # ==================== 测试 ====================
+
     print("\n[5/5] Evaluating on test set...")
 
-    # 加载最佳模型
+
     checkpoint = torch.load(os.path.join(args.output_dir, 'best_model.pth'))
     model.load_state_dict(checkpoint['model_state_dict'])
 
-    # 推理时间
+
     inference_mean, inference_std = measure_inference_time(model, args.device)
     print(f"Inference time: {inference_mean:.2f} ms ± {inference_std:.2f} ms")
 
-    # 测试
+
     model.eval()
     all_preds = []
     all_labels = []
@@ -589,7 +587,7 @@ def main():
     )
     macro_f1 = precision_recall_fscore_support(labels, preds, average='macro')[2]
 
-    # 打印结果
+
     print("\n" + "=" * 70)
     print(f"TEST RESULTS - {args.dataset.upper()} (Fine-tuned)")
     print("=" * 70)
@@ -606,7 +604,7 @@ def main():
     print("\nConfusion Matrix:")
     print(cm)
 
-    # 保存结果
+
     results = {
         'dataset': args.dataset,
         'accuracy': float(accuracy),

@@ -1,13 +1,3 @@
-"""
-ABC数据集上 短窗口 Dual PPG + EEG 概率层融合评估
-
-- Dual PPG模型: MESA训练的短窗口模型（零样本迁移到ABC）
-- EEG模型: MESA训练的短窗口模型（零样本迁移到ABC）
-- 融合策略: 加权概率融合，Alpha=0.3
-- 窗口长度: 3分钟、5分钟、10分钟、30分钟
-
-注意：ABC EEG数据已经是4类编码 (0:Wake, 1:Light, 2:Deep, 3:REM)
-"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,27 +17,17 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-# 导入MESA训练的短窗口模型
-# 需要将模型定义文件放在同一目录或添加到sys.path
+
 try:
     from ppg_crossattn_shortwindow import PPGCrossAttnShortWindow, create_model_for_window
     from short_window_eeg_model import ShortWindowAttnSleep
 except ImportError:
-    print("请确保ppg_crossattn_shortwindow.py和short_window_eeg_model.py在当前目录或PYTHONPATH中")
+    print("Make sure ppg_crossattn_shortwindow.py和short_window_eeg_model.py are in the current directory or PYTHONPATH")
     sys.exit(1)
 
 
 def load_abc_test_data(ppg_path, ppg_index_path, eeg_folder, seed=42):
-    """
-    加载ABC测试集数据
 
-    Returns:
-        test_subjects: 测试被试列表 (使用PPG格式的ID)
-        ppg_indices: {ppg_subject_id: (start_idx, n_windows)}
-        eeg_files: {ppg_subject_id: file_path}  # 使用PPG ID作为key
-    """
-    # 获取PPG有效被试
-    # PPG ID格式: 900001_baseline
     with h5py.File(ppg_index_path, 'r') as f:
         all_subjects = list(f['subjects'].keys())
         ppg_valid_subjects = []
@@ -59,64 +39,48 @@ def load_abc_test_data(ppg_path, ppg_index_path, eeg_folder, seed=42):
                 indices = f[f'subjects/{subj}/window_indices'][:]
                 ppg_indices[subj] = (indices[0], n_windows)
 
-    print(f"PPG有效被试总数: {len(ppg_valid_subjects)}")
-    print(f"PPG ID格式示例: {ppg_valid_subjects[:3]}")
+    print(f"Number of valid PPG subjects: {len(ppg_valid_subjects)}")
+    print(f"Example PPG IDs: {ppg_valid_subjects[:3]}")
 
-    # 加载EEG文件映射
-    # EEG文件名格式: abc-baseline-900001.npz -> 提取 900001
     eeg_files_raw = {}
     files = glob.glob(str(Path(eeg_folder) / "*.npz"))
 
     for file in files:
         filename = Path(file).stem
-        # abc-baseline-900001 -> 900001
+
         parts = filename.split('-')
         eeg_id = parts[-1] if len(parts) >= 3 else filename
         eeg_files_raw[eeg_id] = file
 
-    print(f"找到EEG文件: {len(eeg_files_raw)}")
-    print(f"EEG ID格式示例: {list(eeg_files_raw.keys())[:3]}")
+    print(f"Number of EEG files found: {len(eeg_files_raw)}")
+    print(f"Example EEG IDs: {list(eeg_files_raw.keys())[:3]}")
 
-    # 建立PPG ID到EEG文件的映射
-    # PPG: 900001_baseline -> EEG: 900001
     eeg_files = {}
     for ppg_id in ppg_valid_subjects:
-        # 从PPG ID提取数字部分: 900001_baseline -> 900001
+
         eeg_id = ppg_id.split('_')[0]
         if eeg_id in eeg_files_raw:
             eeg_files[ppg_id] = eeg_files_raw[eeg_id]
 
-    # 找出同时有PPG和EEG的被试
-    common_subjects = [s for s in ppg_valid_subjects if s in eeg_files]
-    print(f"同时有PPG和EEG的被试: {len(common_subjects)}")
 
-    # 划分测试集（与微调时相同的划分方式）
+    common_subjects = [s for s in ppg_valid_subjects if s in eeg_files]
+
     train_subjects, temp_subjects = train_test_split(common_subjects, test_size=0.4, random_state=seed)
     val_subjects, test_subjects = train_test_split(temp_subjects, test_size=0.5, random_state=seed)
 
-    print(f"测试集被试数: {len(test_subjects)}")
 
     return test_subjects, ppg_indices, eeg_files
 
 
 def fusion_inference(ppg_model, eeg_model, test_subjects, ppg_indices,
                      eeg_files, ppg_path, device, window_minutes, alpha=0.3):
-    """
-    短窗口融合推理
 
-    Args:
-        window_minutes: 窗口长度（分钟）
-        alpha: 融合权重 (0=纯EEG, 1=纯PPG)
-
-    Returns:
-        preds, labels, avg_inference_time_ms, std_inference_time_ms
-    """
     ppg_model.eval()
     eeg_model.eval()
 
-    epochs_per_window = window_minutes * 2  # 每分钟2个epoch (30秒/epoch)
-    samples_per_epoch_ppg = 1024  # PPG采样率34.13Hz * 30s ≈ 1024
-    samples_per_epoch_eeg = 3000  # EEG采样率100Hz * 30s = 3000
+    epochs_per_window = window_minutes * 2
+    samples_per_epoch_ppg = 1024
+    samples_per_epoch_eeg = 3000
 
     all_preds = []
     all_labels = []
@@ -128,35 +92,35 @@ def fusion_inference(ppg_model, eeg_model, test_subjects, ppg_indices,
     with torch.no_grad():
         for subj in tqdm(test_subjects, desc=f"Alpha={alpha}"):
             try:
-                # 获取PPG数据信息
+
                 start_idx, n_windows = ppg_indices[subj]
 
-                # 加载PPG数据
+
                 with h5py.File(ppg_path, 'r') as f:
                     ppg_windows = f['ppg'][start_idx:start_idx + n_windows]
                     ppg_labels = f['labels'][start_idx:start_idx + n_windows]
 
-                # 加载EEG数据
+
                 if subj not in eeg_files:
                     skipped_subjects += 1
                     continue
 
                 eeg_data = np.load(eeg_files[subj])
-                eeg_epochs = eeg_data['x']  # ABC EEG已是4类标签
+                eeg_epochs = eeg_data['x']
                 n_eeg = len(eeg_epochs)
 
-                # 取最小长度
+
                 min_len = min(n_windows, n_eeg)
                 if min_len < epochs_per_window:
                     skipped_subjects += 1
                     continue
 
-                # 截取到相同长度
+
                 ppg_windows = ppg_windows[:min_len]
                 ppg_labels = ppg_labels[:min_len]
                 eeg_epochs = eeg_epochs[:min_len]
 
-                # 过滤无效标签 (PPG: 0-3有效, -1无效; ABC EEG已是4类)
+
                 valid_mask = (ppg_labels >= 0) & (ppg_labels <= 3)
                 ppg_windows = ppg_windows[valid_mask]
                 ppg_labels = ppg_labels[valid_mask]
@@ -166,52 +130,52 @@ def fusion_inference(ppg_model, eeg_model, test_subjects, ppg_indices,
                     skipped_subjects += 1
                     continue
 
-                # 分割成短窗口
+
                 n_windows_total = len(ppg_labels) // epochs_per_window
 
                 for win_idx in range(n_windows_total):
                     start = win_idx * epochs_per_window
                     end = start + epochs_per_window
 
-                    # 提取窗口数据
+
                     ppg_win = ppg_windows[start:end]
                     labels_win = ppg_labels[start:end]
                     eeg_win = eeg_epochs[start:end]
 
-                    # 准备PPG数据: (1, 1, samples)
+
                     ppg_continuous = ppg_win.reshape(-1).astype(np.float32)
                     ppg_tensor = torch.FloatTensor(ppg_continuous).unsqueeze(0).unsqueeze(0).to(device)
 
-                    # 准备EEG数据: (1, n_epochs, signal_length)
+
                     eeg_tensor = torch.FloatTensor(eeg_win.astype(np.float32)).unsqueeze(0).to(device)
 
-                    # EEG标准化（稳定版本）
+
                     eeg_mean = eeg_tensor.mean(dim=-1, keepdim=True)
                     eeg_std = eeg_tensor.std(dim=-1, keepdim=True)
                     eeg_std = torch.where(eeg_std > 1e-6, eeg_std, torch.ones_like(eeg_std))
                     eeg_tensor = (eeg_tensor - eeg_mean) / eeg_std
                     eeg_tensor = torch.clamp(eeg_tensor, -10, 10)
 
-                    # GPU同步后开始计时
+
                     if use_cuda:
                         torch.cuda.synchronize()
                     start_time = time.perf_counter()
 
-                    # PPG推理: 输出 (1, 4, n_epochs)
+
                     ppg_logits = ppg_model(ppg_tensor)
                     ppg_probs = F.softmax(ppg_logits, dim=1)
                     ppg_probs = ppg_probs[0].transpose(0, 1)  # (n_epochs, 4)
 
-                    # EEG推理: 输出 (1, n_epochs, 4)
+
                     eeg_logits = eeg_model(eeg_tensor)
                     eeg_probs = F.softmax(eeg_logits, dim=-1)
                     eeg_probs = eeg_probs[0]  # (n_epochs, 4)
 
-                    # 融合
+
                     fused_probs = alpha * ppg_probs + (1 - alpha) * eeg_probs
                     preds = torch.argmax(fused_probs, dim=1).cpu().numpy()
 
-                    # GPU同步后结束计时
+
                     if use_cuda:
                         torch.cuda.synchronize()
                     end_time = time.perf_counter()
@@ -225,7 +189,7 @@ def fusion_inference(ppg_model, eeg_model, test_subjects, ppg_indices,
                 continue
 
     if skipped_subjects > 0:
-        print(f"  跳过 {skipped_subjects} 个被试（数据不完整或出错）")
+        print(f"  Skipped {skipped_subjects} subjects (incomplete data or errors)")
 
     inf_mean = np.mean(inference_times) if inference_times else 0
     inf_std = np.std(inference_times) if inference_times else 0
@@ -235,19 +199,19 @@ def fusion_inference(ppg_model, eeg_model, test_subjects, ppg_indices,
 
 def evaluate_fusion(window_minutes, ppg_model_path, eeg_model_path,
                     ppg_path, index_path, eeg_folder, output_dir, gpu_id=0):
-    """评估融合模型"""
+
 
     device = torch.device(f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu')
-    print(f"设备: {device}")
+    print(f"device: {device}")
     if device.type == 'cpu':
-        print("⚠️  警告: 使用CPU运行，速度较慢")
-    print(f"窗口长度: {window_minutes} 分钟")
+        print("Warning: Running on CPU — execution may be slow")
+    print(f"Window length: {window_minutes}")
 
-    # 窗口大小格式转换: 30 -> "30min"
+
     window_size_str = f"{window_minutes}min"
 
-    # 加载PPG模型 (MESA训练)
-    print("\n加载Dual PPG模型 (MESA训练，零样本迁移到ABC)...")
+
+    print("\nDual PPG ...")
     ppg_model = create_model_for_window(window_size_str).to(device)
 
     checkpoint = torch.load(ppg_model_path, map_location=device, weights_only=False)
@@ -256,17 +220,16 @@ def evaluate_fusion(window_minutes, ppg_model_path, eeg_model_path,
         epoch = checkpoint.get('epoch', '?')
         best_kappa = checkpoint.get('best_kappa', None)
         if best_kappa is not None:
-            print(f"  加载自 epoch {epoch}, best_kappa={best_kappa:.4f}")
+            print(f"  load epoch {epoch}, best_kappa={best_kappa:.4f}")
     elif isinstance(checkpoint, dict) and 'model' in checkpoint:
         ppg_model.load_state_dict(checkpoint['model'])
     else:
         ppg_model.load_state_dict(checkpoint)
 
     ppg_params = sum(p.numel() for p in ppg_model.parameters())
-    print(f"  PPG参数量: {ppg_params:,} ({ppg_params / 1e6:.2f}M)")
+    print(f"  {ppg_params:,} ({ppg_params / 1e6:.2f}M)")
 
-    # 加载EEG模型 (MESA训练)
-    print("\n加载EEG模型 (MESA训练，零样本迁移到ABC)...")
+
     eeg_model = ShortWindowAttnSleep(
         window_minutes=window_minutes,
         num_classes=4
@@ -278,30 +241,25 @@ def evaluate_fusion(window_minutes, ppg_model_path, eeg_model_path,
         epoch = eeg_checkpoint.get('epoch', '?')
         best_kappa = eeg_checkpoint.get('best_kappa', None)
         if best_kappa is not None:
-            print(f"  加载自 epoch {epoch}, best_kappa={best_kappa:.4f}")
+            print(f"  load epoch {epoch}, best_kappa={best_kappa:.4f}")
     else:
         eeg_model.load_state_dict(eeg_checkpoint)
 
     eeg_params = sum(p.numel() for p in eeg_model.parameters())
-    print(f"  EEG参数量: {eeg_params:,} ({eeg_params / 1e6:.2f}M)")
+    print(f"   {eeg_params:,} ({eeg_params / 1e6:.2f}M)")
 
     total_params = ppg_params + eeg_params
-    print(f"\n总参数量: {total_params:,} ({total_params / 1e6:.2f}M)")
+    print(f" {total_params:,} ({total_params / 1e6:.2f}M)")
 
-    # 加载测试数据
-    print("\n加载ABC测试数据...")
+
     test_subjects, ppg_indices, eeg_files = load_abc_test_data(
         ppg_path, index_path, eeg_folder
     )
 
-    if len(test_subjects) == 0:
-        print("❌ 没有找到有效的测试被试！")
-        return None
 
-    # 只测试Alpha=0.3
-    alpha = 0.3
+    alpha = 0.4
     print(f"\n{'=' * 70}")
-    print(f"测试 Alpha={alpha} (PPG:{alpha * 100:.0f}%, EEG:{(1 - alpha) * 100:.0f}%)")
+    print(f"test Alpha={alpha} (PPG:{alpha * 100:.0f}%, EEG:{(1 - alpha) * 100:.0f}%)")
     print(f"{'=' * 70}")
 
     class_names = ['Wake', 'Light', 'Deep', 'REM']
@@ -312,20 +270,20 @@ def evaluate_fusion(window_minutes, ppg_model_path, eeg_model_path,
     )
 
     if len(preds) == 0:
-        print("❌ 没有有效预测！")
+        print("❌")
         return None
 
-    # 计算指标
+
     acc = accuracy_score(labels, preds)
     kappa = cohen_kappa_score(labels, preds)
     f1_macro = f1_score(labels, preds, average='macro')
     cm = confusion_matrix(labels, preds, labels=[0, 1, 2, 3])
 
-    # 打印结果
+
     print(f"\n{'#' * 70}")
-    print(f"##  ABC短窗口融合结果 ({window_minutes}分钟)")
+    print(f"##  ({window_minutes})")
     print(f"{'#' * 70}")
-    print(f"\n{'指标':<25} {'值':<20}")
+    print(f"\n{'Metric':<25} {'Value':<20}")
     print(f"{'-' * 45}")
     print(f"{'κ (Kappa)':<25} {kappa:.4f}")
     print(f"{'Acc (Accuracy)':<25} {acc * 100:.2f}%")
@@ -333,13 +291,12 @@ def evaluate_fusion(window_minutes, ppg_model_path, eeg_model_path,
     print(f"{'Inference (ms)':<25} {inf_mean:.2f}±{inf_std:.2f}")
     print(f"{'-' * 45}")
 
-    # 打印混淆矩阵
-    print(f"\n混淆矩阵:")
+    print(f"\nConfusion matrix:")
     print(f"{'-' * 70}")
-    print(f"{'真实-预测':<10}", end="")
+    print(f"{'True/Pred':<10}", end="")
     for name in class_names:
         print(f"{name:<12}", end="")
-    print(f"{'召回率':<10}")
+    print(f"{'Recall':<10}")
     print(f"{'-' * 70}")
     for i, name in enumerate(class_names):
         print(f"{name:<10}", end="")
@@ -349,7 +306,7 @@ def evaluate_fusion(window_minutes, ppg_model_path, eeg_model_path,
         print(f"{recall:.2%}")
     print(f"{'-' * 70}")
 
-    # 保存结果
+
     results = {
         'dataset': 'ABC',
         'window_minutes': window_minutes,
@@ -383,28 +340,37 @@ def evaluate_fusion(window_minutes, ppg_model_path, eeg_model_path,
     with open(result_path, 'w') as f:
         json.dump(results, f, indent=2)
 
-    print(f"\n结果已保存: {result_path}")
+    print(f" {result_path}")
 
     return results
 
 
 def main():
-    parser = argparse.ArgumentParser(description='ABC数据集短窗口PPG+EEG融合评估')
+    parser = argparse.ArgumentParser(description='Short-window PPG+EEG fusion evaluation on the ABC dataset')
+
     parser.add_argument('--window', type=int, required=True, choices=[3, 5, 10, 30],
-                        help='窗口长度（分钟）')
+                        help='Window length (minutes)')
+
     parser.add_argument('--ppg_model', type=str, required=True,
-                        help='MESA训练的短窗口PPG模型路径')
+                        help='Path to the MESA-trained short-window PPG model')
+
     parser.add_argument('--eeg_model', type=str, required=True,
-                        help='MESA训练的短窗口EEG模型路径')
+                        help='Path to the MESA-trained short-window EEG model')
+
     parser.add_argument('--ppg_data', type=str, required=True,
-                        help='ABC PPG数据路径 (abc_ppg_with_labels.h5)')
+                        help='Path to the ABC PPG dataset (abc_ppg_with_labels.h5)')
+
     parser.add_argument('--ppg_index', type=str, required=True,
-                        help='ABC PPG索引文件路径 (abc_subject_index.h5)')
+                        help='Path to the ABC PPG index file (abc_subject_index.h5)')
+
     parser.add_argument('--eeg_folder', type=str, required=True,
-                        help='ABC EEG数据文件夹')
+                        help='ABC EEG data folder')
+
     parser.add_argument('--output', type=str, default='./abc_fusion_short_results',
-                        help='输出目录')
-    parser.add_argument('--gpu', type=int, default=0, help='GPU ID')
+                        help='Output directory')
+
+    parser.add_argument('--gpu', type=int, default=0,
+                        help='GPU ID')
 
     args = parser.parse_args()
 
