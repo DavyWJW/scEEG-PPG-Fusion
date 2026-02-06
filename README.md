@@ -159,15 +159,35 @@ python cross-dataset/abc/finetune_mamba_fusion.py             # ABC
     <img src="figures/performance_2.png" width="70%" alt="CComparison of κ across single-modality and fusion-based methods on the MESA, CFS, and ABC datasets"/>
   </p>
   
+## Acknowledgments
+
+- Data provided by the [National Sleep Research Resource (NSRR)](https://sleepdata.org/)
+- EEG baseline adapted from [Eldele et al., 2021](https://github.com/emadeldeen24/AttnSleep)
+- PPG baseline adapted from [Wang et al., 2025](https://github.com/DavyWJW/sleep-staging-models)
+
 ## Citation
 
-If you find this work useful, please cite:
+If you find this work useful, please cite:(coming soon)
 
+
+This work builds upon the following studies:
 ```bibtex
-@article{wang2025sceeg,
-  title={Combining scEEG and PPG for reliable sleep staging using lightweight wearables},
-  author={Wang, Jiawei and Xu, Liang and Zheng, Shuntian and Guan, Yu and Wang, Kaichen and Zhang, Ziqing and Chen, Chen and Yang, Laurence T. and Gu, Sai},
-  journal={IEEE Transactions and Journals},
+@article{eldele2021attention,
+  author={Eldele, Emadeldeen and Chen, Zhenghua and Liu, Chengyu and Wu, Min and Kwoh, Chee-Keong and Li, Xiaoli and Guan, Cuntai},
+  journal={IEEE Transactions on Neural Systems and Rehabilitation Engineering},
+  title={An Attention-based Deep Learning Approach for Sleep Stage Classification with Single-Channel EEG},
+  year={2021},
+  volume={29},
+  pages={809-818},
+  doi={10.1109/TNSRE.2021.3076234}
+}
+```
+```bibtex
+@inproceedings{wang2025improving,
+  title={On Improving PPG-Based Sleep Staging: A Pilot Study},
+  author={Wang, Jiawei and Guan, Yu and Chen, Chen and Zhou, Ligang and Yang, Laurence T and Gu, Sai},
+  booktitle={Companion of the 2025 ACM International Joint Conference on Pervasive and Ubiquitous Computing},
+  pages={1640--1644},
   year={2025}
 }
 ```
@@ -175,33 +195,3 @@ If you find this work useful, please cite:
 ## License
 
 This project is licensed under the MIT License.
-
-## Acknowledgments
-
-- Data provided by the [National Sleep Research Resource (NSRR)](https://sleepdata.org/)
-  
-- EEG baseline from [Eldele et al., 2021](https://github.com/emadeldeen24/AttnSleep)
-  ```bibtex
-@article{wang2025sceeg,
-  title={Combining scEEG and PPG for reliable sleep staging using lightweight wearables},
-  author={Wang, Jiawei and Xu, Liang and Zheng, Shuntian and Guan, Yu and Wang, Kaichen and Zhang, Ziqing and Chen, Chen and Yang, Laurence T. and Gu, Sai},
-  journal={IEEE Transactions and Journals},
-  year={2025}
-}
-```
-
-
-- PPG baseline from [Kotzen et al., 2023](https://github.com/eth-siplab/SleepPPG-Net)
-```bibtex
-@article{wang2025sceeg,
-  title={Combining scEEG and PPG for reliable sleep staging using lightweight wearables},
-  author={Wang, Jiawei and Xu, Liang and Zheng, Shuntian and Guan, Yu and Wang, Kaichen and Zhang, Ziqing and Chen, Chen and Yang, Laurence T. and Gu, Sai},
-  journal={IEEE Transactions and Journals},
-  year={2025}
-}
-```
-
-
-
-
-
