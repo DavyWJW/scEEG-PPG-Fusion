@@ -54,7 +54,7 @@ h5py>=3.0.0
 mne>=1.0.0
 tqdm>=4.60.0
 pandas>=1.3.0
-mamba-ssm>=1.0.0  # Optional, for Mamba-enhanced fusion
+mamba-ssm>=1.0.0  #For Mamba-enhanced fusion
 ```
 
 Install dependencies:
@@ -77,33 +77,64 @@ python train/ppg_crossattn_shortwindow.py --window_minutes 3
 ### 2. Train Fusion Models on MESA
 
 ```bash
+# Train score-level fusion
+python train/train_score_fusion.py \
+    --ppg_model path/to/ppg_model.pth \
+    --eeg_model path/to/eeg_model.pth
+
 # Train cross-attention fusion
 python train/train_cross_attention_fusion.py
+    --ppg_model path/to/ppg_model.pth \
+    --eeg_model path/to/eeg_model.pth
 
 # Train Mamba-enhanced fusion
 python train/train_mamba_fusion_mesa.py
-```
-
-### 3. Evaluate Score-level Fusion
-
-```bash
-python train/train_score_fusion.py \
     --ppg_model path/to/ppg_model.pth \
     --eeg_model path/to/eeg_model.pth
 ```
 
-### 4. Cross-dataset Validation
-
-```bash
-# Preprocess CFS data
+### 3. Cross-dataset Validation
+3.1 Data Preprocessing
+# CFS dataset - EEG preprocessing (C3-M2 montage)
 python cross-dataset/cfs/eeg_data_processing.py
 
-# Zero-shot evaluation on CFS
-python cross-dataset/cfs/cross_dataset_eeg_evaluation.py
+# ABC dataset - EEG and PPG preprocessing
+python cross-dataset/abc/prepare_abc_eeg.py
+python cross-dataset/abc/prepare_abc_ppg.py
 
-# Fine-tune on CFS
-python cross-dataset/cfs/finetune_eeg_on_cfs.py
-```
+3.2 Zero-shot Evaluation (Without Fine-tuning)
+# CFS dataset
+python cross-dataset/cfs/cross_dataset_eeg_evaluation.py      # scEEG zero-shot
+python cross-dataset/cfs/cross_dataset_dualppg_evaluation.py  # PPG zero-shot
+
+# ABC dataset
+python cross-dataset/abc/eval_eeg__zeroshot_abc.py            # scEEG zero-shot
+python cross-dataset/abc/eval_dual_ppg_zeroshot_abc.py        # PPG zero-shot
+
+3.3 Fine-tuning on Target Dataset
+
+# CFS dataset - Fine-tune individual models
+python cross-dataset/cfs/finetune_eeg_on_cfs.py               # scEEG fine-tuning
+python cross-dataset/cfs/finetune_dual_ppg_on_cfs.py          # PPG fine-tuning
+
+# ABC dataset - Fine-tune individual models
+python cross-dataset/abc/finetune_eeg_on_abc.py               # scEEG fine-tuning
+python cross-dataset/abc/finetune_dual_ppg_on_abc.py          # PPG fine-tuning
+
+3.4 Fusion Model Evaluation on Cross-dataset
+
+# Score-level fusion
+python cross-dataset/cfs/cfs_score_fusion_short_window.py     # CFS
+python cross-dataset/abc/abc_score_fusion_short_window.py     # ABC
+
+# Cross-attention fusion fine-tuning
+python cross-dataset/cfs/finetune_cross_atten.py              # CFS
+python cross-dataset/abc/finetune_cross_atten.py              # ABC
+
+# Mamba-enhanced fusion fine-tuning
+python cross-dataset/cfs/finetune_mamba_fusion.py             # CFS
+python cross-dataset/abc/finetune_mamba_fusion.py             # ABC
+
 
 ## Results
 
@@ -161,5 +192,6 @@ This project is licensed under the MIT License.
   year={2025}
 }
 ```
+
 
 
