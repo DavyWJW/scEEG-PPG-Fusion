@@ -168,7 +168,14 @@ python cross-dataset/abc/finetune_mamba_fusion.py             # ABC
 ## Citation
 
 If you find this work useful, please cite:(coming soon)
-
+```bibtex
+@article{wang2026combining,
+  title={Combining scEEG and PPG for reliable sleep staging using lightweight wearables},
+  author={Wang, Jiawei and Xu, Liang and Zheng, Shuntian and Guan, Yu and Wang, Kaichen and Zhang, Ziqing and Chen, Chen and Yang, Laurence T and Gu, Sai},
+  journal={arXiv preprint arXiv:2602.15042},
+  year={2026}
+}
+```
 
 This work builds upon the following studies:
 ```bibtex
@@ -195,3 +202,4 @@ This work builds upon the following studies:
 ## License
 
 This project is licensed under the MIT License.
+
